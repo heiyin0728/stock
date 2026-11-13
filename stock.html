@@ -2159,36 +2159,38 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            const headerRegion = resp.headers.get('x-vercel-region') || '';
             if (resp.ok) {
-                return { ok: true, data: await resp.json() };
+                return { ok: true, data: await resp.json(), region: headerRegion };
             }
             const errData = await resp.json().catch(() => ({}));
             const msg = errData.error?.message || `API 錯誤 (${resp.status})`;
-            return { ok: false, status: resp.status, message: msg };
+            const region = errData.error?.vercelRegion || headerRegion;
+            return { ok: false, status: resp.status, message: msg, region };
         }
 
         async function callGeminiViaWorker(apiKey, parts) {
-            // 依序嘗試多個模型：當主模型出現 503 High Demand 或 429 時自動重試並切換至備援模型
             const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest'];
-            const payload = {
-                contents: [{ parts }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    temperature: 0.1
-                }
-            };
-
             let lastError = null;
             let useVercelProxy = true;
 
             for (let i = 0; i < models.length; i++) {
                 const model = models[i];
+                const genConfig = {
+                    responseMimeType: "application/json",
+                    temperature: 0.1
+                };
+                if (model.startsWith('gemini-2.5')) {
+                    genConfig.thinkingConfig = { thinkingBudget: 0 };
+                }
+                const payload = {
+                    contents: [{ parts }],
+                    generationConfig: genConfig
+                };
 
-                // 最多嘗試 2 次（處理 Google 暫時性 503 high demand）
                 for (let attempt = 0; attempt < 2; attempt++) {
-                    if (attempt > 0) await sleepMs(1200);
+                    if (attempt > 0) await sleepMs(1000);
 
-                    // 1. 優先嘗試同網域 Vercel Serverless Proxy（位於美國/新加坡節點，香港免 VPN）
                     if (useVercelProxy) {
                         try {
                             const vRes = await postToGeminiEndpoint(`${VERCEL_PROXY_BASE}?model=${encodeURIComponent(model)}`, {
@@ -2196,45 +2198,45 @@
                                 payload
                             });
                             if (vRes.ok) return vRes.data;
-                            // 若網站尚未建立 /api/gemini 檔案（404 / 405），停用 Vercel Proxy 並改走 Cloudflare Worker
-                            if (vRes.status === 404 || vRes.status === 405) {
+                            if (vRes.status === 404) {
                                 useVercelProxy = false;
                             } else {
-                                lastError = new Error(vRes.message);
-                                if (vRes.status === 400 || vRes.status === 403) {
-                                    // 若是金鑰錯誤直接報錯；若是地區不支援則繼續往下測試
-                                    if (!/location is not supported/i.test(vRes.message)) throw lastError;
+                                const regionTag = vRes.region ? ` [${vRes.region}]` : '';
+                                if (/location is not supported/i.test(vRes.message)) {
+                                    throw new Error(`Vercel 後端被 Google 地區限制阻擋${regionTag}：${vRes.message}`);
                                 }
-                                // 503 / 429 / 500 繼續重試或切換下一個模型
+                                lastError = new Error(`Vercel 代理錯誤 (${vRes.status}${regionTag}): ${vRes.message}`);
+                                if (vRes.status === 400 || vRes.status === 403 || vRes.status === 405) {
+                                    throw lastError;
+                                }
                                 continue;
                             }
                         } catch (e) {
-                            if (e === lastError) throw e;
-                            useVercelProxy = false;
+                            if (e === lastError || /Vercel 後端被 Google|Vercel 代理錯誤/.test(e.message)) throw e;
+                            lastError = new Error(`連線 /api/gemini 失敗 (${e.message || '網絡逾時或中斷'})`);
+                            continue;
                         }
                     }
 
-                    // 2. 備援：呼叫 Cloudflare Worker
-                    try {
-                        const wRes = await postToGeminiEndpoint(
-                            `${WORKER_BASE_URL}/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-                            payload
-                        );
-                        if (wRes.ok) return wRes.data;
+                    if (!useVercelProxy) {
+                        try {
+                            const wRes = await postToGeminiEndpoint(
+                                `${WORKER_BASE_URL}/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+                                payload
+                            );
+                            if (wRes.ok) return wRes.data;
 
-                        lastError = new Error(wRes.message);
-                        // 若遇到地區限制（Cloudflare 走到香港機房），無需再重試同機房模型，直接跳出給予明確指引
-                        if (/location is not supported/i.test(wRes.message)) {
-                            throw new Error('目前連線節點位於香港（Cloudflare 走了香港機房），請開啟 VPN 或於 Vercel 加入 api/gemini.js 即可永久免 VPN');
+                            lastError = new Error(wRes.message);
+                            if (/location is not supported/i.test(wRes.message)) {
+                                throw new Error('目前連線節點位於香港（找不到 /api/gemini 接口），請確認 GitHub 已建立 api/gemini.js');
+                            }
+                            if (wRes.status === 400 && /API key not valid/i.test(wRes.message)) {
+                                throw new Error('Gemini API Key 無效，請檢查是否複製完整');
+                            }
+                        } catch (e) {
+                            lastError = e;
+                            if (/目前連線節點位於香港|API Key 無效/.test(e.message)) throw e;
                         }
-                        // 若金鑰無效
-                        if (wRes.status === 400 && /API key not valid/i.test(wRes.message)) {
-                            throw new Error('Gemini API Key 無效，請檢查是否複製完整');
-                        }
-                        // 若是 503 High Demand / 429 / 500 / 404，自動重試或切換下一個模型
-                    } catch (e) {
-                        lastError = e;
-                        if (/目前連線節點位於香港|API Key 無效/.test(e.message)) throw e;
                     }
                 }
             }
