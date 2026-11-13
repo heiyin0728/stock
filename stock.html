@@ -1,0 +1,2950 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#10b981">
+    <title>家庭用品助理 - 智慧庫存與格價</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, get, update, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAwleOsALATtT61-J0QLq41LD3dKghD0aE",
+            authDomain: "homestocktake.firebaseapp.com",
+            databaseURL: "https://homestocktake-default-rtdb.firebaseio.com",
+            projectId: "homestocktake",
+            storageBucket: "homestocktake.firebasestorage.app",
+            messagingSenderId: "456863563659",
+            appId: "1:456863563659:web:6f3f87feb395b474af398e",
+            measurementId: "G-BL2XHE1FE7"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const rtdb = getDatabase(app);
+            window.FB = { rtdb, ref, set, onValue, get, update, remove, onDisconnect };
+        } catch(e) {
+            console.error("Firebase 初始化失敗:", e);
+        }
+        window.isFirebaseLoaded = true;
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
+
+    <style>
+        :root {
+            --safe-area-top: env(safe-area-inset-top, 0px);
+            --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        html, body {
+            height: 100%;
+            height: 100dvh;
+            max-height: 100dvh;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+            background-color: #f3f4f6;
+            padding-top: var(--safe-area-top);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        main#mainContent {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: calc(6.75rem + var(--safe-area-bottom));
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        #bootloader {
+            position: fixed; inset: 0; z-index: 9999;
+            background: linear-gradient(135deg, #10b981, #059669);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: white; transition: opacity 0.4s ease;
+        }
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white; border-radius: 50%;
+            width: 36px; height: 36px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal-enter { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .nav-item.active { color: #10b981; font-weight: bold; }
+        .nav-item { transition: all 0.2s ease; }
+        .filter-btn.active { background-color: #10b981; color: white; font-weight: bold; }
+        
+        .autocomplete-dropdown {
+            position: absolute; left: 0; right: 0; top: 100%; z-index: 60;
+            background: white; border: 1px solid #e5e7eb; border-radius: 0.75rem;
+            max-height: 180px; overflow-y: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        }
+        .autocomplete-item { padding: 0.5rem 0.75rem; font-size: 0.8rem; border-bottom: 1px solid #f3f4f6; cursor: pointer; text-align: center; }
+        .autocomplete-item:hover { background-color: #ecfdf5; color: #059669; }
+
+        /* 響應式自適應卡片網格：隨瀏覽器闊度自動增減列數，且每張卡片高度固定 */
+        .responsive-product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+            gap: 0.55rem;
+        }
+        .product-card-fixed {
+            height: 176px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        select.center-select {
+            text-align: center;
+            text-align-last: center;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div id="bootloader">
+        <i class="fas fa-home fa-3x mb-3 shadow-sm"></i>
+        <h1 class="text-2xl font-bold mb-2 tracking-wide">家庭用品助理</h1>
+        <div class="spinner mb-3"></div>
+        <p id="bootStatus" class="text-xs opacity-90">正在初始化數據...</p>
+    </div>
+
+    <header class="bg-emerald-600 text-white px-4 py-2.5 shadow-md flex justify-between items-center shrink-0 z-10 relative">
+        <div class="flex items-center gap-2">
+            <i class="fas fa-home text-base"></i>
+            <h1 class="text-base font-bold tracking-wide">家庭用品助理</h1>
+        </div>
+        <div class="text-xs bg-emerald-700 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-inner cursor-pointer" onclick="switchTab('system')">
+            <i class="fas fa-cloud text-emerald-300"></i> <span id="headerGroupName">未登入群組</span>
+        </div>
+    </header>
+
+    <main class="no-scrollbar relative" id="mainContent">
+        
+        <!-- 📦 視圖 1：主頁面物資庫存 -->
+        <section id="view-products" class="p-3 space-y-3 hidden">
+            
+            <!-- ⚠️ 低庫存警告 Banner -->
+            <div id="lowStockBanner" class="hidden bg-red-50 border border-red-200 rounded-xl p-2.5 text-xs text-red-700 shadow-sm">
+                <div class="font-bold flex items-center text-red-800 mb-1">
+                    <i class="fas fa-exclamation-triangle mr-1.5 text-red-500"></i> ⚠️ 低庫存警告 (需要補貨)
+                </div>
+                <div id="lowStockItemsList" class="space-y-0.5 text-[11px]"></div>
+            </div>
+
+            <!-- 🔔 建議最佳訂貨/補貨提醒 Banner -->
+            <div id="reorderSuggestionBanner" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-800 shadow-sm">
+                <div class="font-bold flex items-center text-amber-900 mb-1">
+                    <i class="fas fa-shipping-fast mr-1.5 text-amber-600"></i> 🔔 預測補貨與最佳訂貨提示
+                </div>
+                <div id="reorderSuggestionList" class="space-y-0.5 text-[11px]"></div>
+            </div>
+
+            <!-- 搜尋、條碼掃描、匯入單據與新增列 -->
+            <div class="flex gap-1.5 relative">
+                <div class="relative flex-1 min-w-0">
+                    <i class="fas fa-search absolute left-2.5 top-2.5 text-gray-400 text-xs"></i>
+                    <input type="text" id="searchInput" placeholder="搜尋用品名稱..." autocomplete="off" class="w-full pl-8 pr-2 py-2 rounded-xl border-none shadow-sm text-xs bg-white">
+                    <div id="searchAutocomplete" class="autocomplete-dropdown hidden"></div>
+                </div>
+                <button onclick="startScanner('product')" title="掃描貨品條碼" class="bg-white px-2.5 py-2 rounded-xl shadow-sm text-gray-600 hover:text-emerald-600 active:bg-gray-50 flex items-center justify-center shrink-0">
+                    <i class="fas fa-barcode text-base"></i>
+                </button>
+                <button onclick="openImportWizard()" title="匯入送貨單 / 收據" class="bg-blue-600 text-white px-2.5 py-2 rounded-xl shadow-md text-xs font-bold active:scale-95 transition flex items-center gap-1 shrink-0">
+                    <i class="fas fa-file-import"></i> <span>匯入單據</span>
+                </button>
+                <button onclick="openProductModal()" class="bg-emerald-500 text-white px-2.5 py-2 rounded-xl shadow-md text-xs font-bold active:scale-95 transition flex items-center gap-1 shrink-0">
+                    <i class="fas fa-plus"></i> <span>新增</span>
+                </button>
+            </div>
+
+            <!-- 用品分類過濾按鈕 -->
+            <div>
+                <p class="text-[11px] font-bold text-gray-400 mb-1 flex items-center"><i class="fas fa-tags mr-1"></i>用品分類</p>
+                <div class="flex gap-1.5 overflow-x-auto no-scrollbar" id="catFilterGroup"></div>
+            </div>
+
+            <!-- 位置分類過濾按鈕 -->
+            <div>
+                <p class="text-[11px] font-bold text-gray-400 mb-1 flex items-center"><i class="fas fa-map-marker-alt mr-1"></i>存放位置</p>
+                <div class="flex gap-1.5 overflow-x-auto no-scrollbar" id="locFilterGroup"></div>
+            </div>
+
+            <!-- 主頁卡片容器：隨瀏覽器闊度自動調整列數，固定高度且圖片顯示全圖，文字置中 -->
+            <div id="productList" class="responsive-product-grid pt-1 pb-4"></div>
+        </section>
+
+        <!-- 👁️ 視圖 2：監察清單 -->
+        <section id="view-watchlist" class="p-4 space-y-3 hidden">
+            <div id="zeroStockBox" class="space-y-2">
+                <h3 class="text-sm font-bold text-red-600 flex items-center"><i class="fas fa-shopping-cart text-red-500 mr-1.5"></i>🛒 重新購入 (缺貨用品)</h3>
+                <div id="zeroStockContainer" class="space-y-2"></div>
+            </div>
+
+            <hr class="my-3 border-gray-200">
+
+            <h2 class="text-sm font-bold text-gray-700 flex items-center"><i class="fas fa-star text-amber-400 mr-1.5"></i>關注用品全港商戶即時價錢 (含 iHerb)</h2>
+            <div id="followedMerchantStickyBox" class="space-y-2"></div>
+
+            <hr class="my-3 border-gray-200">
+            <h3 class="text-xs font-bold text-gray-600"><i class="fas fa-list-ul mr-1"></i>監察用品清單 (Watchlist)</h3>
+            <div id="watchlistContainer" class="space-y-2"></div>
+        </section>
+
+        <!-- 🧮 視圖 3：全港格價雷達 (含 iHerb) -->
+        <section id="view-calculator" class="p-4 space-y-4 hidden">
+            <h2 class="text-lg font-bold text-gray-700 flex items-center"><i class="fas fa-search-dollar text-emerald-500 mr-2"></i>全港商戶即時格價雷達</h2>
+            <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+                <p class="text-xs text-gray-500">輸入用品名稱，系統將自動搜尋並提供百佳、惠康、HKTVmall、7-Eleven、OK 便利店及 iHerb 之真實商品網址與門市連結。</p>
+                <div class="relative">
+                    <label class="block text-xs font-bold text-gray-700 mb-1 text-center">商品名稱 (支援智慧搜尋建議)</label>
+                    <input type="text" id="calcName" placeholder="例如: 維他奶原味 250ml" autocomplete="off" class="w-full p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-sm text-center">
+                    <div id="calcAutocomplete" class="autocomplete-dropdown hidden"></div>
+                </div>
+
+                <button onclick="runQuickCalc()" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-sm active:scale-95 transition shadow-md">
+                    搜尋全港商戶價格與門市連結
+                </button>
+                <div id="calcResult" class="hidden mt-3 p-3 rounded-xl bg-gray-50 border border-gray-100"></div>
+            </div>
+        </section>
+
+        <!-- ⚙️ 視圖 4：系統與家庭設定 -->
+        <section id="view-system" class="p-4 space-y-4 hidden">
+            <h2 class="text-lg font-bold text-gray-700 flex items-center"><i class="fas fa-cog text-emerald-500 mr-2"></i>系統與家庭設定</h2>
+            
+            <!-- 👨‍👩‍👧‍👦 家庭群組整合區 -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+                <h3 class="text-sm font-bold text-gray-800 border-b pb-2 flex items-center"><i class="fas fa-users text-emerald-500 mr-1.5"></i>家庭群組管理</h3>
+                
+                <!-- 已登入群組狀態 -->
+                <div id="loggedInState" class="space-y-3 hidden">
+                    <div class="flex justify-between items-center bg-emerald-50 p-2.5 rounded-xl">
+                        <div>
+                            <p class="text-[10px] text-emerald-700">當前家庭群組</p>
+                            <h4 class="text-base font-bold text-emerald-800" id="displayFamilyName">讀取中...</h4>
+                        </div>
+                        <button onclick="editFamilyName()" class="text-emerald-600 hover:text-emerald-800 text-xs font-bold">修改名稱</button>
+                    </div>
+
+                    <div class="flex justify-between items-center bg-gray-50 p-2.5 rounded-xl">
+                        <div>
+                            <p class="text-[10px] text-gray-400">你的稱呼 (按加入次序)</p>
+                            <p class="text-xs font-bold text-gray-800" id="displayMyName">-</p>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-center justify-center py-2 bg-gray-50 rounded-xl">
+                        <p class="text-xs text-gray-500 mb-1">群組邀請二維碼與邀請碼</p>
+                        <div id="qrcode" class="p-1.5 bg-white rounded-lg shadow-xs"></div>
+                        <p class="mt-1 font-mono text-sm font-bold tracking-widest text-gray-700" id="displayInviteCode">------</p>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <h5 class="font-bold text-xs text-gray-500"><i class="fas fa-signal text-emerald-500 mr-1"></i>正在上線成員 (按加入次序，離線自動移除)</h5>
+                            <span id="onlineMemberCount" class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">0 人在線</span>
+                        </div>
+                        <ul id="memberList" class="space-y-1.5"></ul>
+                    </div>
+
+                    <button onclick="logout()" class="w-full text-red-500 font-bold py-2 text-center text-xs bg-red-50 rounded-xl border border-red-100">登出當前家庭群組 / 切換群組</button>
+                </div>
+
+                <!-- 未登入群組狀態 -->
+                <div id="loggedOutState" class="space-y-3 text-center py-2">
+                    <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xl mx-auto mb-1">
+                        <i class="fas fa-house-user"></i>
+                    </div>
+                    <h4 class="text-sm font-bold text-gray-800">尚未登入或加入群組</h4>
+                    <p class="text-xs text-gray-500">輸入已有群組的 8 位邀請碼即可直接連上雲端資料。</p>
+                    
+                    <div class="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                        <input type="text" id="manualInviteCode" placeholder="輸入 8 位邀請碼 (如 ABC12345)" maxlength="8" class="w-full p-2.5 rounded-xl bg-white border border-gray-200 text-center font-mono text-sm uppercase font-bold">
+                        <label class="flex items-center justify-center gap-1 text-xs text-gray-600 cursor-pointer pt-1">
+                            <input type="checkbox" id="rememberDeviceCheck" checked class="w-3.5 h-3.5 text-emerald-600 rounded">
+                            <span>在此裝置上記住登入資料</span>
+                        </label>
+                        <button onclick="handleManualJoin()" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold shadow-md active:scale-95">輸入邀請碼加入舊群組</button>
+                    </div>
+
+                    <button onclick="startScanner('login')" class="w-full bg-gray-800 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1">
+                        <i class="fas fa-qrcode"></i> 掃描家人二維碼加入
+                    </button>
+                    <button onclick="createGroup()" class="text-emerald-600 text-xs font-bold underline block w-full py-1">建立全新家庭群組</button>
+                </div>
+            </div>
+
+            <!-- 🤖 AI 單據解析設定 (Gemini API Key - 雲端群組共享，設定後自動隱藏輸入欄) -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3" id="systemGeminiCard">
+                <div class="flex justify-between items-center border-b pb-2">
+                    <h3 class="text-sm font-bold text-gray-800 flex items-center"><i class="fas fa-robot text-blue-500 mr-1.5"></i>AI 送貨單識別設定 (Gemini Flash)</h3>
+                    <button type="button" onclick="toggleApiGuideBox('systemApiGuideBox')" class="text-[11px] text-blue-600 font-bold underline flex items-center gap-1">
+                        <i class="fas fa-book-open"></i> 申請圖文教學
+                    </button>
+                </div>
+
+                <!-- 已儲存至家庭雲端資料庫後的狀態（不再顯示輸入介面） -->
+                <div id="systemGeminiConfiguredBox" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-1">
+                    <div class="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
+                        <i class="fas fa-check-circle text-emerald-600 text-sm"></i>
+                        <span>API Key 已儲存至家庭群組雲端資料庫</span>
+                    </div>
+                    <p class="text-[11px] text-emerald-700 leading-relaxed">所有家庭成員加入此群組後均會自動共用此金鑰，無需再顯示或重複輸入，且可直接在香港免 VPN 識別網購單據與截圖。</p>
+                </div>
+
+                <!-- 新群組／尚未設定 API Key 時顯示的輸入介面 -->
+                <div id="systemGeminiInputBox" class="space-y-2.5">
+                    <p class="text-[11px] text-gray-600 leading-relaxed">請貼上您的 Google Gemini API Key。<b>儲存一次後將自動寫入目前家庭群組的雲端資料庫</b>，之後不再顯示此輸入欄，全體家庭成員亦可自動共用。</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="systemGeminiKeyInput" placeholder="貼上 AQ. 或 AIzaSy... API Key" class="flex-1 p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs font-mono">
+                        <button onclick="saveGeminiKeyFromSystem()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold active:scale-95 shrink-0 shadow-xs">儲存至群組</button>
+                    </div>
+                </div>
+
+                <!-- 詳細圖文逐步解釋指引（新群組預設展開，已設定群組可隨時點擊查閱） -->
+                <div id="systemApiGuideBox" class="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-3 text-xs">
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-bold text-slate-800 flex items-center gap-1.5">
+                            <i class="fas fa-graduation-cap text-blue-600"></i> 如何免費申請 Gemini API Key（圖文逐步指引）
+                        </h4>
+                    </div>
+
+                    <!-- Step 1 -->
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">步驟 1</span>
+                            <span class="font-bold text-slate-800">開啟 VPN 連線至支援地區（僅申請時需開一次）</span>
+                        </div>
+                        <p class="text-[11px] text-slate-600 leading-relaxed">Google AI Studio 暫未對香港 IP 開放申請。請先在手機或電腦開啟 VPN 連至<b>台灣、新加坡、日本或美國</b>（申請完成後即可關閉 VPN，日常掃描單據完全免 VPN）。</p>
+                        <div class="bg-slate-900 text-white rounded-lg p-2 flex items-center justify-between text-[10px] font-mono">
+                            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> VPN 狀態：已連線</span>
+                            <span class="bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded">節點：台灣 / 新加坡</span>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">步驟 2</span>
+                            <span class="font-bold text-slate-800">用無痕視窗前往 Google AI Studio</span>
+                        </div>
+                        <p class="text-[11px] text-slate-600 leading-relaxed">開啟瀏覽器的<b>無痕／私密分頁</b>（避免舊香港地區快取），前往官方網站並登入您的 Google 帳號：</p>
+                        <div class="bg-gray-100 border border-gray-200 rounded-lg p-2 flex items-center justify-between">
+                            <span class="text-[11px] font-mono text-blue-700 font-bold"><i class="fas fa-lock text-emerald-600 mr-1"></i>https://aistudio.google.com</span>
+                            <a href="https://aistudio.google.com" target="_blank" class="bg-blue-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-md">前往開啟 ↗</a>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">步驟 3</span>
+                            <span class="font-bold text-slate-800">點擊左側選單「Get started」下的「API keys」</span>
+                        </div>
+                        <p class="text-[11px] text-slate-600 leading-relaxed">進入後點擊左上角選單圖示，在 <b>GET STARTED</b> 分類下方點擊 <b>API keys</b>（或左下角的鎖匙圖示）：</p>
+                        <!-- 模擬側邊欄介面圖解 -->
+                        <div class="bg-[#1e1f22] text-gray-300 rounded-lg p-2.5 text-[11px] font-sans space-y-1 border border-gray-700">
+                            <div class="text-[9px] text-gray-500 font-bold tracking-wider px-2">GET STARTED</div>
+                            <div class="px-2 py-0.5 text-gray-400">Overview</div>
+                            <div class="px-2 py-0.5 text-gray-400">Get started</div>
+                            <div class="px-2 py-1 rounded bg-blue-500/20 border-2 border-red-500 text-white font-bold flex justify-between items-center">
+                                <span><i class="fas fa-key text-amber-400 mr-1.5"></i>API keys</span>
+                                <span class="text-[9px] bg-red-500 text-white px-1.5 py-0.2 rounded">👈 點擊此處</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">步驟 4</span>
+                            <span class="font-bold text-slate-800">建立金鑰並複製「AQ.」或「AIzaSy」字串</span>
+                        </div>
+                        <p class="text-[11px] text-slate-600 leading-relaxed">點擊右上角 <b>Create API key</b> → 選擇預設專案（如 <i>Default Gemini Project</i>）→ 按 <b>Create key</b>。產生金鑰後點擊右側<b>複製圖示</b>，即可關閉 VPN。</p>
+                        <!-- 模擬金鑰產生圖解 -->
+                        <div class="bg-[#1e1f22] text-gray-200 rounded-lg p-2.5 text-[11px] space-y-1.5 border border-gray-700">
+                            <div class="text-[10px] text-gray-400">API Key</div>
+                            <div class="flex items-center justify-between bg-black/40 px-2 py-1.5 rounded border border-gray-600">
+                                <span class="font-mono text-emerald-400 text-[10px] truncate">AQ.Ab8RN6lmLQ75YkDk8YkzXq...</span>
+                                <span class="bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded shrink-0 ml-2"><i class="far fa-copy mr-1"></i>複製</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5 -->
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">步驟 5</span>
+                            <span class="font-bold text-slate-800">貼入上方欄位並按「儲存至群組」</span>
+                        </div>
+                        <p class="text-[11px] text-slate-600 leading-relaxed">儲存後金鑰會永久儲存在您家庭群組的雲端資料庫，輸入介面會自動隱藏，所有成員隨時可直接匯入單據！</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 📋 活動 Log 日誌整合區 -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+                <div class="flex justify-between items-center border-b pb-2">
+                    <h3 class="text-sm font-bold text-gray-800 flex items-center"><i class="fas fa-history text-emerald-500 mr-1.5"></i>活動 Log 日誌紀錄</h3>
+                    <button onclick="clearLogs()" class="text-[11px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold active:scale-95">清空 Log</button>
+                </div>
+                <div id="activityLogContainer" class="space-y-1.5 max-h-48 overflow-y-auto no-scrollbar text-xs"></div>
+            </div>
+
+            <!-- 🏷️ 用品分類與存放位置編輯管理 -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+                <h3 class="text-sm font-bold text-gray-800 border-b pb-2 flex items-center"><i class="fas fa-tags text-emerald-500 mr-1.5"></i>分類與位置編輯管理</h3>
+                
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-bold text-gray-700">用品分類列表</label>
+                        <button onclick="addCategoryPrompt()" class="text-xs text-emerald-600 font-bold">+ 新增分類</button>
+                    </div>
+                    <ul id="categoriesEditList" class="space-y-1"></ul>
+                </div>
+
+                <div class="pt-2 border-t">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-bold text-gray-700">存放位置列表</label>
+                        <button onclick="addLocationPrompt()" class="text-xs text-emerald-600 font-bold">+ 新增位置</button>
+                    </div>
+                    <ul id="locationsEditList" class="space-y-1"></ul>
+                </div>
+            </div>
+
+            <!-- 💾 本地數據備份與日誌位置 -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3 text-xs">
+                <h3 class="text-sm font-bold text-gray-800 border-b pb-2 flex items-center"><i class="fas fa-database text-emerald-500 mr-1.5"></i>備份與日誌資料夾管理</h3>
+                
+                <div class="bg-gray-50 p-2.5 rounded-xl border border-gray-200 space-y-1">
+                    <p class="font-bold text-gray-700">📦 貨品庫存自動備份</p>
+                    <p class="text-gray-500 text-[11px]">備份頻率：每 2 小時自動備份至本地</p>
+                    <p class="text-gray-500 text-[11px] font-mono">存放位置: LocalStorage > hh_inventory_backup</p>
+                    <div class="flex gap-2 pt-1">
+                        <button onclick="openOrExportBackupFolder()" class="flex-1 bg-emerald-600 text-white py-1.5 rounded-lg font-bold flex items-center justify-center gap-1">
+                            <i class="fas fa-folder-open"></i> 一鍵開啟/匯出備份資料夾
+                        </button>
+                        <label class="flex-1 bg-emerald-100 text-emerald-800 py-1.5 rounded-lg font-bold text-center cursor-pointer flex items-center justify-center gap-1">
+                            <i class="fas fa-file-import"></i> 匯入備份
+                            <input type="file" id="importJsonInput" accept=".json" class="hidden" onchange="importBackupJSON(event)">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-2.5 rounded-xl border border-gray-200 space-y-1">
+                    <p class="font-bold text-gray-700">📋 活動 Log 日誌備份</p>
+                    <p class="text-gray-500 text-[11px]">備份頻率：每日自動備份至本地</p>
+                    <p class="text-gray-500 text-[11px] font-mono">存放位置: LocalStorage > hh_activity_logs</p>
+                    <button onclick="openOrExportLogsFolder()" class="w-full bg-gray-800 text-white py-1.5 rounded-lg font-bold mt-1 flex items-center justify-center gap-1">
+                        <i class="fas fa-folder-open"></i> 一鍵開啟/匯出 Log 日誌資料夾
+                    </button>
+                </div>
+
+                <div class="pt-2 flex justify-between items-center text-gray-500 border-t">
+                    <span>雲端資料庫狀態</span>
+                    <span id="cloudStatusText" class="font-bold text-emerald-600">● 已就緒</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 底部導覽列 -->
+    <nav class="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 w-full flex justify-around items-center shrink-0 z-20 pb-[var(--safe-area-bottom)]">
+        <button onclick="switchTab('watchlist')" id="tab-watchlist" class="nav-item flex flex-col items-center py-2.5 w-1/4 text-gray-400">
+            <i class="fas fa-star text-base mb-0.5"></i><span class="text-[10px]">監察</span>
+        </button>
+        <button onclick="switchTab('calculator')" id="tab-calculator" class="nav-item flex flex-col items-center py-2.5 w-1/4 text-gray-400">
+            <i class="fas fa-search-dollar text-base mb-0.5"></i><span class="text-[10px]">格價雷達</span>
+        </button>
+        <button onclick="switchTab('products')" id="tab-products" class="nav-item flex flex-col items-center py-2 w-1/4 text-gray-400 active">
+            <div class="bg-emerald-500 text-white w-10 h-10 rounded-full flex items-center justify-center -mt-5 shadow-lg border-4 border-[#f3f4f6]">
+                <i class="fas fa-box-open text-lg"></i>
+            </div>
+            <span class="text-[10px] mt-0.5 font-bold text-emerald-600">庫存</span>
+        </button>
+        <button onclick="switchTab('system')" id="tab-system" class="nav-item flex flex-col items-center py-2.5 w-1/4 text-gray-400">
+            <i class="fas fa-cog text-base mb-0.5"></i><span class="text-[10px]">系統與家庭</span>
+        </button>
+    </nav>
+
+    <!-- 模態框：新增/編輯商品 -->
+    <div id="productModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex-col justify-end" onclick="closeProductModal(event)" onpaste="handleModalGlobalPaste(event)">
+        <div class="bg-white w-full rounded-t-3xl p-3.5 pb-[calc(18px+var(--safe-area-bottom))] max-h-[92dvh] overflow-y-auto modal-enter" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-2">
+                <div class="flex items-center gap-2">
+                    <h3 id="modalTitle" class="text-sm font-bold text-gray-800">編輯用品細節</h3>
+                    <span id="barcodeBadge" class="hidden text-[10px] font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200"></span>
+                </div>
+                <button onclick="closeProductModal(true)" class="text-gray-400 p-1"><i class="fas fa-times text-base"></i></button>
+            </div>
+            
+            <input type="hidden" id="itemIndex">
+            <input type="hidden" id="itemBarcode">
+            <input type="hidden" id="itemImg">
+
+            <div class="space-y-2.5 text-xs">
+                
+                <!-- 1. 最高處：商品圖片（完整顯示）、支援網頁圖片複製貼上、與極簡縮小的圖片位址欄 -->
+                <div class="flex items-center gap-2 bg-gray-50 p-1.5 rounded-xl border border-gray-100">
+                    <div id="imgPreviewBox" class="hidden w-12 h-12 shrink-0 bg-white rounded-lg border border-gray-200 flex items-center justify-center p-0.5 overflow-hidden">
+                        <img id="imgPreview" class="max-w-full max-h-full w-auto h-auto object-contain">
+                    </div>
+                    <div class="flex-1 min-w-0 flex flex-col gap-1">
+                        <div class="flex items-center gap-1 flex-wrap">
+                            <label class="bg-emerald-100 text-emerald-800 py-1 px-2 rounded-lg font-bold cursor-pointer text-[10px] flex items-center gap-1 shrink-0">
+                                <i class="fas fa-camera"></i> 拍照/選圖
+                                <input type="file" id="cameraInput" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
+                            </label>
+                            <button type="button" onclick="pasteImageFromClipboard()" class="bg-blue-100 text-blue-800 py-1 px-2 rounded-lg font-bold text-[10px] flex items-center gap-1 shrink-0 active:scale-95">
+                                <i class="fas fa-paste"></i> 貼上圖片
+                            </button>
+                            <button type="button" id="clearImgBtn" onclick="clearProductImage()" class="hidden bg-gray-200 text-gray-600 py-1 px-1.5 rounded-lg text-[10px] font-bold shrink-0">
+                                清除
+                            </button>
+                        </div>
+                        <!-- 盡量縮小的圖片位址顯示欄位（支援直接貼上網頁圖片或圖片網址） -->
+                        <div class="flex items-center gap-1">
+                            <i class="fas fa-link text-[9px] text-gray-400 shrink-0"></i>
+                            <input type="text" id="itemImgDisplay" oninput="handleImgUrlInput(this.value)" onpaste="handleImgInputPaste(event)" class="w-full max-w-[200px] py-0.5 px-1.5 rounded bg-white border border-gray-200 text-[10px] text-gray-500 truncate h-5" placeholder="可貼上網頁圖片或網址...">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 商品名 + 條碼快速掃描（文字置中） -->
+                <div class="relative">
+                    <div class="flex justify-between items-center mb-0.5">
+                        <label class="block font-bold text-gray-700">用品名稱 *</label>
+                        <button type="button" onclick="startScanner('fillModal')" class="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
+                            <i class="fas fa-barcode"></i> 掃描條碼自動填入
+                        </button>
+                    </div>
+                    <input type="text" id="itemName" placeholder="例如: 維他奶原味 250ml" autocomplete="off" class="w-full p-2 rounded-xl bg-gray-50 border border-gray-200 text-xs text-center font-bold">
+                    <div id="modalItemAutocomplete" class="autocomplete-dropdown hidden"></div>
+                </div>
+
+                <!-- 3. 左右雙欄（存放位置文字置中） -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="space-y-1.5 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                        <div>
+                            <label class="block font-bold text-gray-700 text-[11px] mb-0.5 text-center">現有庫存數量</label>
+                            <div class="flex items-center">
+                                <button onclick="adjustModalQty(-1)" class="w-7 h-7 bg-gray-200 rounded-l-lg text-gray-700"><i class="fas fa-minus text-[10px]"></i></button>
+                                <input type="number" id="itemQty" class="w-full h-7 text-center bg-white border-y border-gray-200 font-bold text-xs" value="1">
+                                <button onclick="adjustModalQty(1)" class="w-7 h-7 bg-emerald-500 rounded-r-lg text-white"><i class="fas fa-plus text-[10px]"></i></button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-gray-700 text-[11px] mb-0.5 text-center">自訂低存量閥值 (0為不提醒)</label>
+                            <input type="number" id="itemMinQty" min="0" value="1" class="w-full p-1.5 rounded-lg bg-white border border-gray-200 font-bold text-xs text-center" placeholder="0 表示不彈出提醒">
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                        <div>
+                            <label class="block font-bold text-gray-700 text-[11px] mb-0.5 text-center">用品分類</label>
+                            <select id="itemCat" class="w-full p-1.5 rounded-lg bg-white border border-gray-200 text-xs center-select"></select>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-gray-700 text-[11px] mb-0.5 text-center">存放位置</label>
+                            <select id="itemLoc" class="w-full p-1.5 rounded-lg bg-white border border-gray-200 text-xs center-select font-bold"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. 購入價錢與歷史紀錄（單位價格自動計算：商品價錢 ÷ 商品計量單位） -->
+                <div class="bg-gray-50 p-2 rounded-xl border border-gray-200 space-y-1.5">
+                    <p class="font-bold text-gray-700 text-[11px]"><i class="fas fa-receipt mr-1 text-emerald-600"></i>購入價錢與歷史紀錄</p>
+                    
+                    <div class="grid grid-cols-3 gap-1">
+                        <div>
+                            <span class="block text-[9px] text-gray-500 mb-0.5 text-center">商品價錢 ($)</span>
+                            <input type="number" id="newPurchasePrice" step="0.01" min="0" oninput="autoCalcUnitPrice()" placeholder="例如 48" class="w-full p-1.5 rounded-lg bg-white border text-xs text-center font-bold">
+                        </div>
+                        <div>
+                            <span class="block text-[9px] text-gray-500 mb-0.5 text-center">商品計量單位</span>
+                            <input type="number" id="newPurchaseMeasureUnit" step="any" min="0.001" oninput="autoCalcUnitPrice()" placeholder="例如 18 / 250" class="w-full p-1.5 rounded-lg bg-white border text-xs text-center font-bold">
+                        </div>
+                        <div>
+                            <span class="block text-[9px] text-emerald-700 font-bold mb-0.5 text-center">單位價格 (自動)</span>
+                            <input type="text" id="newUnitPriceDisplay" readonly placeholder="價錢 ÷ 單位" class="w-full p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-center font-extrabold text-emerald-700">
+                            <input type="hidden" id="newUnitPrice">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-1">
+                        <div>
+                            <span class="text-[9px] text-gray-400">訂貨日期</span>
+                            <input type="date" id="newOrderDate" class="w-full p-1 rounded-lg bg-white border text-[11px]">
+                        </div>
+                        <div>
+                            <span class="text-[9px] text-gray-400">到貨日期</span>
+                            <input type="date" id="newArrivalDate" class="w-full p-1 rounded-lg bg-white border text-[11px]">
+                        </div>
+                    </div>
+
+                    <input type="text" id="newPurchaseNote" placeholder="人手備註 (如: 特價9折)" class="w-full p-1.5 rounded-lg bg-white border text-xs">
+
+                    <button type="button" onclick="addPurchaseRecord()" class="w-full bg-emerald-100 text-emerald-800 py-1 rounded-lg font-bold hover:bg-emerald-200 active:scale-95 text-xs">
+                        + 新增買入紀錄
+                    </button>
+
+                    <div id="purchaseHistoryList" class="space-y-1 pt-1 max-h-24 overflow-y-auto no-scrollbar"></div>
+                </div>
+
+                <!-- 5. 關注、監察、刪除、儲存 -->
+                <div class="grid grid-cols-4 gap-1.5 pt-1">
+                    <label class="flex items-center justify-center gap-1 p-2 bg-emerald-50 rounded-xl border border-emerald-200 cursor-pointer text-center">
+                        <input type="checkbox" id="itemFollow" class="w-3.5 h-3.5 text-emerald-600 rounded">
+                        <span class="font-bold text-emerald-800 text-xs">關注</span>
+                    </label>
+                    <label class="flex items-center justify-center gap-1 p-2 bg-amber-50 rounded-xl border border-amber-200 cursor-pointer text-center">
+                        <input type="checkbox" id="itemWatch" class="w-3.5 h-3.5 text-amber-600 rounded">
+                        <span class="font-bold text-amber-800 text-xs">監察</span>
+                    </label>
+                    <button id="deleteBtn" onclick="deleteProduct()" class="bg-red-100 text-red-600 py-2 rounded-xl font-bold text-xs active:scale-95">刪除</button>
+                    <button onclick="saveProduct()" class="bg-emerald-600 text-white py-2 rounded-xl font-bold text-xs shadow-md active:scale-95">儲存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態框：Web App 內建「匯入送貨單精靈」 -->
+    <div id="importWizardModal" class="fixed inset-0 bg-black/60 z-50 hidden flex-col justify-end" onclick="closeImportWizard(event)">
+        <div class="bg-white w-full rounded-t-3xl p-4 pb-[calc(18px+var(--safe-area-bottom))] max-h-[92dvh] overflow-y-auto modal-enter space-y-3" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                    <i class="fas fa-file-invoice text-blue-600"></i> 匯入網購送貨單 / 收據精靈
+                </h3>
+                <button onclick="closeImportWizard(true)" class="text-gray-400 p-1"><i class="fas fa-times text-base"></i></button>
+            </div>
+
+            <!-- 步驟一：輸入單據文字或上傳截圖/PDF -->
+            <div id="importStepInput" class="space-y-2.5 text-xs">
+                <p class="text-[11px] text-gray-500">貼上 HKTVmall、百佳、惠康、iHerb 等確認信文字，或上傳送貨單截圖 / PDF，系統會自動識別貨品並比對現有庫存。</p>
+
+                <!-- 已儲存至雲端後的精簡狀態（不再顯示輸入欄） -->
+                <div id="wizardApiConfiguredBadge" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-2 flex items-center justify-between">
+                    <span class="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
+                        <i class="fas fa-check-circle text-emerald-600"></i> 已啟用家庭雲端 Gemini AI 識別（無需再輸入金鑰）
+                    </span>
+                </div>
+
+                <!-- 尚未設定 API Key 的新群組才顯示輸入介面 -->
+                <div id="wizardApiSetupSection" class="bg-blue-50/80 border border-blue-200 rounded-xl p-2.5 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                            <i class="fas fa-key text-blue-600"></i> 首次設定家庭 Gemini API Key
+                        </span>
+                        <button type="button" onclick="openSystemApiGuide()" class="text-[10px] text-blue-700 font-bold underline">
+                            如何申請？圖文教學 ↗
+                        </button>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <input type="text" id="wizardGeminiKeyInput" placeholder="貼上 AQ. 或 AIzaSy... 金鑰（儲存後自動隱藏）" class="flex-1 p-1.5 rounded-lg bg-white border border-blue-200 text-[11px] font-mono">
+                        <button onclick="saveGeminiKeyFromWizard()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold text-[11px] shrink-0">儲存</button>
+                    </div>
+                </div>
+
+                <!-- 上傳截圖 / PDF -->
+                <div>
+                    <label class="w-full bg-gray-50 hover:bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition">
+                        <i class="fas fa-cloud-upload-alt text-xl text-blue-500 mb-1"></i>
+                        <span class="font-bold text-gray-700 text-xs">點擊上傳送貨單截圖 / 相片 / PDF 檔案</span>
+                        <span class="text-[10px] text-gray-400 mt-0.5">支援 PNG, JPG, WEBP 或 PDF 電子單據</span>
+                        <input type="file" id="importFileInput" accept="image/*,.pdf,application/pdf" class="hidden" onchange="handleImportFileUpload(event)">
+                    </label>
+                    <div id="importFileBadge" class="hidden mt-1.5 bg-blue-50 text-blue-800 px-2.5 py-1.5 rounded-lg text-[11px] flex justify-between items-center border border-blue-200">
+                        <span id="importFileName" class="truncate font-bold"></span>
+                        <button type="button" onclick="clearImportFile()" class="text-red-500 font-bold ml-2 shrink-0">移除</button>
+                    </div>
+                </div>
+
+                <!-- 貼上文字框 -->
+                <div>
+                    <label class="block font-bold text-gray-700 mb-1">或直接貼上訂單 / 送貨單文字內容：</label>
+                    <textarea id="importRawText" rows="4" placeholder="例如：&#10;維他奶原味豆奶 250ml x 2&#10;Tempo 三層軟包面紙 18包 x 1 $48.5&#10;出前一丁麻油味 5包裝 x 3" class="w-full p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs"></textarea>
+                </div>
+
+                <button id="parseReceiptBtn" onclick="parseDeliveryNote()" class="w-full bg-blue-600 text-white py-2.5 rounded-xl font-bold text-xs shadow-md active:scale-95 flex items-center justify-center gap-1.5">
+                    <i class="fas fa-magic"></i> 開始識別並比對現有貨存
+                </button>
+            </div>
+
+            <!-- 步驟二：入庫確認清單（含智能模糊比對結果） -->
+            <div id="importStepConfirm" class="hidden space-y-2.5 text-xs">
+                <div class="flex justify-between items-center bg-emerald-50 p-2 rounded-xl border border-emerald-200">
+                    <span class="font-bold text-emerald-800 text-[11px]"><i class="fas fa-check-circle mr-1"></i>已識別以下貨品，請確認數量與對應庫存：</span>
+                    <button onclick="resetImportWizardStep()" class="text-[11px] text-blue-600 font-bold underline shrink-0">重新輸入</button>
+                </div>
+
+                <div id="importConfirmList" class="space-y-2 max-h-[52dvh] overflow-y-auto no-scrollbar pr-0.5"></div>
+
+                <div class="flex gap-2 pt-1">
+                    <button onclick="addEmptyImportRow()" class="bg-gray-100 text-gray-700 px-3 py-2.5 rounded-xl font-bold text-xs shrink-0">
+                        + 補加一項
+                    </button>
+                    <button onclick="confirmBatchStockIn()" class="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs shadow-md active:scale-95">
+                        ✅ 確認批量入庫 (同步雲端)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態框：首次開網頁／新瀏覽器登入引導彈窗 -->
+    <div id="firstTimeLoginModal" class="fixed inset-0 bg-black/60 z-50 hidden flex-col justify-center items-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl modal-enter text-center space-y-4">
+            <div class="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-2xl mx-auto">
+                <i class="fas fa-house-user"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold text-gray-800">歡迎使用家庭用品助理</h3>
+                <p class="text-xs text-gray-500 mt-1">請選擇輸入邀請碼加入已有群組，或建立新群組。</p>
+            </div>
+
+            <div class="space-y-2 text-left">
+                <label class="block text-xs font-bold text-gray-700">舊家庭群組 8 位邀請碼</label>
+                <input type="text" id="modalInviteCodeInput" placeholder="輸入 8 位邀請碼 (例如 ABC12345)" maxlength="8" class="w-full p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-center font-mono text-sm uppercase font-bold">
+                <label class="flex items-center justify-center gap-1.5 text-xs text-gray-600 cursor-pointer py-1">
+                    <input type="checkbox" id="modalRememberDeviceCheck" checked class="w-4 h-4 text-emerald-600 rounded">
+                    <span>在此裝置上記住登入資料</span>
+                </label>
+                <button onclick="handleModalJoin()" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold shadow-md active:scale-95">
+                    🔑 輸入邀請碼加入群組
+                </button>
+            </div>
+
+            <div class="border-t pt-3 space-y-2">
+                <button onclick="startScanner('login')" class="w-full bg-gray-800 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1">
+                    <i class="fas fa-qrcode"></i> 掃描家人二維碼加入
+                </button>
+                <button onclick="createGroupModal()" class="w-full text-emerald-600 font-bold text-xs py-1 underline">
+                    🏠 建立全新家庭群組
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態框：QR Code / Barcode 掃描器 -->
+    <div id="scannerModal" class="fixed inset-0 bg-black z-50 hidden flex-col">
+        <div class="flex justify-between items-center p-4 text-white">
+            <h3 class="text-base font-bold" id="scannerTitle">掃描二維碼 / 條碼</h3>
+            <button onclick="closeScanner()" class="bg-white/20 p-2 rounded-full w-9 h-9 flex items-center justify-center"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="flex-1 relative flex items-center justify-center">
+            <div id="reader" class="w-full max-w-md"></div>
+        </div>
+        <div class="p-4 pb-[calc(16px+var(--safe-area-bottom))] bg-gray-900 text-center space-y-2">
+            <p class="text-white/80 text-xs" id="scannerHintText">請將條碼或邀請二維碼置於對焦框內</p>
+            <div id="manualBarcodeBox" class="hidden flex gap-2 max-w-sm mx-auto pt-1">
+                <input type="text" id="manualBarcodeInput" placeholder="相機無法對焦？手動輸入條碼數字..." class="flex-1 px-3 py-2 rounded-xl bg-white text-gray-800 text-xs font-mono">
+                <button onclick="submitManualBarcode()" class="bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-bold shrink-0">查詢</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SESSION_KEY = 'hh_app_session';
+        const LOGS_KEY = 'hh_activity_logs';
+        const BACKUP_KEY = 'hh_inventory_backup';
+        const GEMINI_KEY_STORAGE = 'hh_gemini_api_key';
+        const VERCEL_PROXY_BASE = '/api/gemini';
+        const WORKER_BASE_URL = 'https://gemini-proxy.heiyin0728-7ba.workers.dev';
+        const ONLINE_TIMEOUT_MS = 35000;
+
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        let currentGroup = null;
+        let currentUser = null;
+        let db = {
+            products: [],
+            categories: ['食品', '飲品', '日用品', '潔淨用品', '其他'],
+            locations: ['廚房櫃', '雪櫃', '浴室', '雜物房'],
+            members: {},
+            geminiApiKey: ''
+        };
+        let isCloudReady = false;
+        let html5QrCode = null;
+        let isHandlingScan = false;
+        let activeCategory = '全部';
+        let activeLocation = '全部';
+        let currentEditingHistory = [];
+        let heartbeatTimer = null;
+
+        // 匯入精靈狀態
+        let importUploadedImageBase64 = null;
+        let importUploadedMimeType = null;
+        let parsedImportItems = [];
+
+        const HK_GOODS_DICTIONARY = [
+            "維他奶原味 250ml", "維他檸檬茶 375ml", "Tempo 三層軟包面紙 18包", "Tempo 四層捲紙 10卷",
+            "出前一丁麻油味 5包裝", "金鳳泰國香米 5kg", "藍妹啤酒 500ml 罐裝", "滴露消毒液 1.2L",
+            "李錦記舊莊蚝油 510g", "可口可樂 330ml 6罐裝", "百佳金御菊泰國香米 8kg", "惠康嚴選鮮雞蛋 10隻",
+            "潔霸超濃縮洗衣液 2kg", "皇冠三層衛生紙 10卷", "刀嘜純正花生油 900ml", "公仔麵雞蓉味 5包裝"
+        ];
+
+        const Toast = Swal.mixin({
+            toast: true, position: 'top-end', showConfirmButton: false, timer: 2200,
+            timerProgressBar: true, customClass: { popup: 'rounded-xl shadow-lg' }
+        });
+
+        function showToast(title, icon = 'success') { Toast.fire({ icon, title }); }
+
+        function formatDateShort(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const yy = String(d.getFullYear()).slice(-2);
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${dd}/${mm}/${yy}`;
+        }
+
+        function addLog(action, details) {
+            try {
+                const logsRaw = localStorage.getItem(LOGS_KEY);
+                let logs = logsRaw ? JSON.parse(logsRaw) : [];
+                const now = new Date();
+                logs.unshift({
+                    timestamp: now.getTime(),
+                    timeStr: now.toLocaleString('zh-HK'),
+                    user: currentUser ? currentUser.name : '用戶',
+                    action,
+                    details
+                });
+                if(logs.length > 200) logs = logs.slice(0, 200);
+                localStorage.setItem(LOGS_KEY, JSON.stringify(logs));
+                renderLogsView();
+            } catch(e) {}
+        }
+
+        function checkAndAutoBackup() {
+            try {
+                const lastBackup = localStorage.getItem('hh_last_backup_time');
+                const now = Date.now();
+                if(!lastBackup || (now - parseInt(lastBackup)) > 2 * 3600 * 1000) {
+                    localStorage.setItem(BACKUP_KEY, JSON.stringify(db.products || []));
+                    localStorage.setItem('hh_last_backup_time', now.toString());
+                    addLog('自動備份', '已每 2 小時將庫存自動備份至本地 LocalStorage');
+                }
+            } catch(e) {}
+        }
+
+        function setupAutocomplete(inputId, dropdownId, onSelect) {
+            const input = document.getElementById(inputId);
+            const dropdown = document.getElementById(dropdownId);
+            if(!input || !dropdown) return;
+
+            input.addEventListener('input', (e) => {
+                const val = e.target.value.trim().toLowerCase();
+                dropdown.innerHTML = '';
+                if(!val) { dropdown.classList.add('hidden'); return; }
+
+                const existingNames = (db.products || []).map(p => p.name);
+                const pool = Array.from(new Set([...existingNames, ...HK_GOODS_DICTIONARY]));
+                const matches = pool.filter(item => item.toLowerCase().includes(val));
+                if(matches.length === 0) { dropdown.classList.add('hidden'); return; }
+
+                matches.slice(0, 8).forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item';
+                    div.innerText = item;
+                    div.onclick = () => {
+                        input.value = item;
+                        dropdown.classList.add('hidden');
+                        if(onSelect) onSelect(item);
+                    };
+                    dropdown.appendChild(div);
+                });
+                dropdown.classList.remove('hidden');
+            });
+
+            document.addEventListener('click', (e) => {
+                if(e.target !== input && !dropdown.contains(e.target)) dropdown.classList.add('hidden');
+            });
+        }
+
+        window.addEventListener('firebase-ready', () => {
+            isCloudReady = window.FB && window.FB.rtdb ? true : false;
+            if(isCloudReady) {
+                const statusEl = document.getElementById('cloudStatusText');
+                if(statusEl) statusEl.innerText = "● 已連線至雲端資料庫";
+            }
+            initApp();
+        });
+
+        setTimeout(() => {
+            const bootloader = document.getElementById('bootloader');
+            if(bootloader && bootloader.style.display !== 'none') {
+                isCloudReady = window.FB && window.FB.rtdb ? true : false;
+                initApp();
+            }
+        }, 1200);
+
+        function initApp() {
+            try {
+                const sessionRaw = localStorage.getItem(SESSION_KEY);
+                let session = sessionRaw ? JSON.parse(sessionRaw) : null;
+                
+                setupAutocomplete('searchInput', 'searchAutocomplete', (val) => renderProducts(val));
+                setupAutocomplete('calcName', 'calcAutocomplete');
+                setupAutocomplete('itemName', 'modalItemAutocomplete');
+
+                syncGeminiKeyUI();
+                renderCategoryAndLocationFilters();
+                renderCategoryAndLocationEditors();
+
+                if (session && session.group && session.user) {
+                    currentGroup = session.group;
+                    currentUser = session.user;
+                    if(window.FB && isCloudReady) {
+                        registerAndListenCloud(currentGroup.id);
+                        startHeartbeat();
+                    }
+                    renderProducts();
+                    renderWatchlist();
+                    renderAccountView();
+                    checkLowStockAndReorderAlerts();
+                    switchTab('products');
+                } else {
+                    currentGroup = null;
+                    currentUser = null;
+                    renderAccountView();
+                    switchTab('system');
+                    showFirstTimeLoginModal();
+                }
+
+                checkAndAutoBackup();
+                renderLogsView();
+            } catch (e) {
+                console.error("Init Error:", e);
+                switchTab('system');
+                showFirstTimeLoginModal();
+            }
+            
+            const bootloader = document.getElementById('bootloader');
+            if(bootloader) {
+                bootloader.style.opacity = '0';
+                setTimeout(() => bootloader.style.display = 'none', 400);
+            }
+        }
+
+        /* ================= 1. Gemini API Key 雲端群組儲存與介面切換 ================= */
+        function getEffectiveGeminiKey() {
+            return (db.geminiApiKey || localStorage.getItem(GEMINI_KEY_STORAGE) || '').trim();
+        }
+
+        function syncGeminiKeyUI() {
+            const key = getEffectiveGeminiKey();
+            const sysConfiguredBox = document.getElementById('systemGeminiConfiguredBox');
+            const sysInputBox = document.getElementById('systemGeminiInputBox');
+            const sysGuideBox = document.getElementById('systemApiGuideBox');
+
+            const wizConfiguredBadge = document.getElementById('wizardApiConfiguredBadge');
+            const wizSetupSection = document.getElementById('wizardApiSetupSection');
+
+            if (key) {
+                // 已儲存 API Key 至家庭群組雲端：隱藏輸入介面，顯示已雲端綁定狀態
+                if (sysConfiguredBox) sysConfiguredBox.classList.remove('hidden');
+                if (sysInputBox) sysInputBox.classList.add('hidden');
+                if (sysGuideBox) sysGuideBox.classList.add('hidden');
+
+                if (wizConfiguredBadge) wizConfiguredBadge.classList.remove('hidden');
+                if (wizSetupSection) wizSetupSection.classList.add('hidden');
+            } else {
+                // 新群組或尚未設定 Key：顯示輸入介面與圖文申請指引
+                if (sysConfiguredBox) sysConfiguredBox.classList.add('hidden');
+                if (sysInputBox) sysInputBox.classList.remove('hidden');
+                if (sysGuideBox) sysGuideBox.classList.remove('hidden');
+
+                if (wizConfiguredBadge) wizConfiguredBadge.classList.add('hidden');
+                if (wizSetupSection) wizSetupSection.classList.remove('hidden');
+            }
+        }
+
+        function toggleApiGuideBox(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('hidden');
+        }
+
+        function openSystemApiGuide() {
+            closeImportWizard(true);
+            switchTab('system');
+            const guideBox = document.getElementById('systemApiGuideBox');
+            if (guideBox) guideBox.classList.remove('hidden');
+            const card = document.getElementById('systemGeminiCard');
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function persistGeminiApiKeyToGroup(val) {
+            const trimmed = (val || '').trim();
+            if (!trimmed) {
+                showToast('請輸入有效的 Gemini API Key', 'warning');
+                return;
+            }
+            db.geminiApiKey = trimmed;
+            localStorage.setItem(GEMINI_KEY_STORAGE, trimmed);
+
+            if (currentGroup && window.FB && isCloudReady) {
+                const groupRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}`);
+                window.FB.update(groupRef, { geminiApiKey: trimmed });
+            }
+
+            syncGeminiKeyUI();
+            addLog('設定 AI 金鑰', '已將 Gemini API Key 儲存至家庭群組雲端資料庫');
+            showToast('✅ API Key 已儲存至家庭雲端資料庫');
+        }
+
+        function saveGeminiKeyFromSystem() {
+            const val = document.getElementById('systemGeminiKeyInput').value.trim();
+            persistGeminiApiKeyToGroup(val);
+        }
+
+        function saveGeminiKeyFromWizard() {
+            const val = document.getElementById('wizardGeminiKeyInput').value.trim();
+            persistGeminiApiKeyToGroup(val);
+        }
+
+        function showFirstTimeLoginModal() {
+            const modal = document.getElementById('firstTimeLoginModal');
+            if(modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }
+        }
+
+        function closeFirstTimeLoginModal() {
+            const modal = document.getElementById('firstTimeLoginModal');
+            if(modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        /* ================= 3. 線上用戶心跳與離線自動刪除機制 ================= */
+        function startHeartbeat() {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            if(!currentGroup || !currentUser || !window.FB) return;
+
+            const updateAndCleanMembers = () => {
+                if (!currentGroup || !currentUser || !window.FB || !isCloudReady) return;
+                const now = Date.now();
+                const memberRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}/members/${currentUser.id}`);
+                window.FB.update(memberRef, {
+                    name: currentUser.name,
+                    lastActive: now,
+                    joinedAt: currentUser.joinedAt || now
+                });
+
+                // 清理已離線超過 35 秒的成員節點，確保資料庫只保留正在上線用戶
+                if (db.members) {
+                    Object.entries(db.members).forEach(([mId, m]) => {
+                        if (mId !== currentUser.id && (now - (m.lastActive || 0)) >= ONLINE_TIMEOUT_MS) {
+                            const staleRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}/members/${mId}`);
+                            window.FB.remove(staleRef).catch(() => {});
+                        }
+                    });
+                }
+                renderAccountView();
+            };
+
+            updateAndCleanMembers();
+            heartbeatTimer = setInterval(updateAndCleanMembers, 10000);
+        }
+
+        // 當瀏覽器關閉或離開頁面時即時刪除上線用戶名
+        window.addEventListener('pagehide', () => {
+            if (currentGroup && currentUser && window.FB && isCloudReady) {
+                try {
+                    const memberRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}/members/${currentUser.id}`);
+                    window.FB.remove(memberRef);
+                } catch(e) {}
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && currentGroup && currentUser && window.FB && isCloudReady) {
+                const memberRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}/members/${currentUser.id}`);
+                window.FB.update(memberRef, {
+                    name: currentUser.name,
+                    lastActive: Date.now(),
+                    joinedAt: currentUser.joinedAt || Date.now()
+                });
+                if (window.FB.onDisconnect) {
+                    window.FB.onDisconnect(memberRef).remove();
+                }
+            }
+        });
+
+        function registerAndListenCloud(groupId) {
+            if(!window.FB) return;
+            const groupRef = window.FB.ref(window.FB.rtdb, `groups/${groupId}`);
+            const memberRef = window.FB.ref(window.FB.rtdb, `groups/${groupId}/members/${currentUser.id}`);
+
+            // 註冊 Firebase 斷線自動刪除（用戶一 Offline 即自動從資料庫刪除用戶名）
+            if (window.FB.onDisconnect) {
+                window.FB.onDisconnect(memberRef).remove();
+            }
+
+            window.FB.update(memberRef, {
+                name: currentUser.name,
+                lastActive: Date.now(),
+                joinedAt: currentUser.joinedAt || Date.now()
+            });
+
+            window.FB.onValue(groupRef, (snapshot) => {
+                const cloudData = snapshot.val();
+                if (cloudData) {
+                    db.products = cloudData.products || [];
+                    db.categories = cloudData.categories || db.categories;
+                    db.locations = cloudData.locations || db.locations;
+                    db.members = cloudData.members || {};
+                    db.geminiApiKey = cloudData.geminiApiKey || '';
+
+                    if (db.geminiApiKey) {
+                        localStorage.setItem(GEMINI_KEY_STORAGE, db.geminiApiKey);
+                    } else {
+                        localStorage.removeItem(GEMINI_KEY_STORAGE);
+                    }
+
+                    if(cloudData.name) currentGroup.name = cloudData.name;
+                    
+                    if (localStorage.getItem(SESSION_KEY)) {
+                        localStorage.setItem(SESSION_KEY, JSON.stringify({ group: currentGroup, user: currentUser }));
+                    }
+                    
+                    syncGeminiKeyUI();
+                    renderCategoryAndLocationFilters();
+                    renderCategoryAndLocationEditors();
+                    renderProducts();
+                    renderWatchlist();
+                    renderAccountView();
+                    checkLowStockAndReorderAlerts();
+                }
+            });
+        }
+
+        function saveToCloud() {
+            if (!currentGroup || !window.FB) return;
+            if (isCloudReady) {
+                const groupRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}`);
+                const payload = {
+                    name: currentGroup.name,
+                    products: db.products || [],
+                    categories: db.categories || [],
+                    locations: db.locations || []
+                };
+                if (db.geminiApiKey) {
+                    payload.geminiApiKey = db.geminiApiKey;
+                }
+                window.FB.update(groupRef, payload);
+            }
+            if (localStorage.getItem(SESSION_KEY)) {
+                localStorage.setItem(SESSION_KEY, JSON.stringify({ group: currentGroup, user: currentUser }));
+            }
+            checkAndAutoBackup();
+        }
+
+        function renderCategoryAndLocationFilters() {
+            const catBox = document.getElementById('catFilterGroup');
+            const locBox = document.getElementById('locFilterGroup');
+            if(!catBox || !locBox) return;
+
+            catBox.innerHTML = `<button onclick="setCategoryFilter('全部')" class="filter-btn cat-btn ${activeCategory==='全部'?'active':''} px-3 py-1 rounded-lg text-xs bg-white text-gray-600 shadow-xs shrink-0">全部</button>`;
+            db.categories.forEach(c => {
+                catBox.innerHTML += `<button onclick="setCategoryFilter('${c}')" class="filter-btn cat-btn ${activeCategory===c?'active':''} px-3 py-1 rounded-lg text-xs bg-white text-gray-600 shadow-xs shrink-0">${c}</button>`;
+            });
+
+            locBox.innerHTML = `<button onclick="setLocationFilter('全部')" class="filter-btn loc-btn ${activeLocation==='全部'?'active':''} px-3 py-1 rounded-lg text-xs bg-white text-gray-600 shadow-xs shrink-0">全部位置</button>`;
+            db.locations.forEach(l => {
+                locBox.innerHTML += `<button onclick="setLocationFilter('${l}')" class="filter-btn loc-btn ${activeLocation===l?'active':''} px-3 py-1 rounded-lg text-xs bg-white text-gray-600 shadow-xs shrink-0">${l}</button>`;
+            });
+
+            const modalCat = document.getElementById('itemCat');
+            const modalLoc = document.getElementById('itemLoc');
+            if(modalCat && modalLoc) {
+                modalCat.innerHTML = db.categories.map(c => `<option value="${c}">${c}</option>`).join('');
+                modalLoc.innerHTML = db.locations.map(l => `<option value="${l}">${l}</option>`).join('');
+            }
+        }
+
+        function renderCategoryAndLocationEditors() {
+            const catEditBox = document.getElementById('categoriesEditList');
+            const locEditBox = document.getElementById('locationsEditList');
+            if(!catEditBox || !locEditBox) return;
+
+            catEditBox.innerHTML = '';
+            db.categories.forEach((cat, idx) => {
+                catEditBox.innerHTML += `
+                    <li class="flex justify-between items-center bg-gray-50 p-1.5 rounded-lg text-xs">
+                        <span class="font-bold text-gray-700">${cat}</span>
+                        <div class="flex items-center gap-1">
+                            <button onclick="moveCategory(${idx}, -1)" class="p-1 text-gray-400 hover:text-gray-600"><i class="fas fa-arrow-up"></i></button>
+                            <button onclick="moveCategory(${idx}, 1)" class="p-1 text-gray-400 hover:text-gray-600"><i class="fas fa-arrow-down"></i></button>
+                            <button onclick="editCategoryPrompt(${idx})" class="p-1 text-emerald-600"><i class="fas fa-edit"></i></button>
+                            <button onclick="deleteCategory(${idx})" class="p-1 text-red-500"><i class="fas fa-trash-alt"></i></button>
+                        </div>
+                    </li>
+                `;
+            });
+
+            locEditBox.innerHTML = '';
+            db.locations.forEach((loc, idx) => {
+                locEditBox.innerHTML += `
+                    <li class="flex justify-between items-center bg-gray-50 p-1.5 rounded-lg text-xs">
+                        <span class="font-bold text-gray-700">${loc}</span>
+                        <div class="flex items-center gap-1">
+                            <button onclick="moveLocation(${idx}, -1)" class="p-1 text-gray-400 hover:text-gray-600"><i class="fas fa-arrow-up"></i></button>
+                            <button onclick="moveLocation(${idx}, 1)" class="p-1 text-gray-400 hover:text-gray-600"><i class="fas fa-arrow-down"></i></button>
+                            <button onclick="editLocationPrompt(${idx})" class="p-1 text-emerald-600"><i class="fas fa-edit"></i></button>
+                            <button onclick="deleteLocation(${idx})" class="p-1 text-red-500"><i class="fas fa-trash-alt"></i></button>
+                        </div>
+                    </li>
+                `;
+            });
+        }
+
+        function addCategoryPrompt() {
+            Swal.fire({ title: '新增分類名稱', input: 'text', showCancelButton: true }).then(r => {
+                if(r.isConfirmed && r.value) {
+                    db.categories.push(r.value.trim());
+                    saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+                    addLog('修改設定', `新增用品分類: ${r.value}`);
+                }
+            });
+        }
+        function editCategoryPrompt(idx) {
+            Swal.fire({ title: '修改分類名稱', input: 'text', inputValue: db.categories[idx], showCancelButton: true }).then(r => {
+                if(r.isConfirmed && r.value) {
+                    const old = db.categories[idx];
+                    db.categories[idx] = r.value.trim();
+                    saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+                    addLog('修改設定', `修改分類 ${old} -> ${r.value}`);
+                }
+            });
+        }
+        function deleteCategory(idx) {
+            if(db.categories.length <= 1) return showToast('至少需保留一個分類', 'error');
+            const cat = db.categories[idx];
+            db.categories.splice(idx, 1);
+            saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+            addLog('修改設定', `刪除分類: ${cat}`);
+        }
+        function moveCategory(idx, dir) {
+            if(idx + dir < 0 || idx + dir >= db.categories.length) return;
+            const temp = db.categories[idx];
+            db.categories[idx] = db.categories[idx + dir];
+            db.categories[idx + dir] = temp;
+            saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+        }
+
+        function addLocationPrompt() {
+            Swal.fire({ title: '新增位置名稱', input: 'text', showCancelButton: true }).then(r => {
+                if(r.isConfirmed && r.value) {
+                    db.locations.push(r.value.trim());
+                    saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+                    addLog('修改設定', `新增存放位置: ${r.value}`);
+                }
+            });
+        }
+        function editLocationPrompt(idx) {
+            Swal.fire({ title: '修改位置名稱', input: 'text', inputValue: db.locations[idx], showCancelButton: true }).then(r => {
+                if(r.isConfirmed && r.value) {
+                    const old = db.locations[idx];
+                    db.locations[idx] = r.value.trim();
+                    saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+                    addLog('修改設定', `修改位置 ${old} -> ${r.value}`);
+                }
+            });
+        }
+        function deleteLocation(idx) {
+            if(db.locations.length <= 1) return showToast('至少需保留一個位置', 'error');
+            const loc = db.locations[idx];
+            db.locations.splice(idx, 1);
+            saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+            addLog('修改設定', `刪除位置: ${loc}`);
+        }
+        function moveLocation(idx, dir) {
+            if(idx + dir < 0 || idx + dir >= db.locations.length) return;
+            const temp = db.locations[idx];
+            db.locations[idx] = db.locations[idx + dir];
+            db.locations[idx + dir] = temp;
+            saveToCloud(); renderCategoryAndLocationFilters(); renderCategoryAndLocationEditors();
+        }
+
+        function checkLowStockAndReorderAlerts() {
+            const lowBanner = document.getElementById('lowStockBanner');
+            const lowList = document.getElementById('lowStockItemsList');
+            const reorderBanner = document.getElementById('reorderSuggestionBanner');
+            const reorderList = document.getElementById('reorderSuggestionList');
+
+            if(!lowBanner || !reorderBanner) return;
+
+            const lowItems = db.products.filter(p => {
+                const threshold = parseInt(p.minQty);
+                return (threshold > 0 && p.qty > 0 && p.qty <= threshold);
+            });
+
+            if(lowItems.length > 0) {
+                lowBanner.classList.remove('hidden');
+                lowList.innerHTML = lowItems.map(p => `<div>• <b>${p.name}</b> (現存: ${p.qty} / 警戒閥值: ${p.minQty})</div>`).join('');
+            } else {
+                lowBanner.classList.add('hidden');
+            }
+
+            reorderList.innerHTML = '';
+            let hasReorder = false;
+
+            db.products.forEach(p => {
+                if(p.purchaseHistory && p.purchaseHistory.length >= 2) {
+                    const history = [...p.purchaseHistory].sort((a,b) => new Date(a.orderDate || a.date) - new Date(b.orderDate || b.date));
+                    let totalLeadDays = 0, leadCount = 0;
+                    
+                    history.forEach(h => {
+                        if(h.orderDate && h.arrivalDate) {
+                            const diff = (new Date(h.arrivalDate) - new Date(h.orderDate)) / (1000 * 3600 * 24);
+                            if(diff >= 0) { totalLeadDays += diff; leadCount++; }
+                        }
+                    });
+                    const avgLeadDays = leadCount > 0 ? Math.round(totalLeadDays / leadCount) : 2;
+
+                    const firstDate = new Date(history[0].orderDate || history[0].date);
+                    const lastDate = new Date(history[history.length - 1].orderDate || history[history.length - 1].date);
+                    const totalDays = (lastDate - firstDate) / (1000 * 3600 * 24);
+                    
+                    if(totalDays > 0) {
+                        const avgDaysBetweenPurchases = totalDays / (history.length - 1);
+                        const nextSuggestedOrderDate = new Date(lastDate.getTime() + (avgDaysBetweenPurchases - avgLeadDays) * 24 * 3600 * 1000);
+                        const today = new Date();
+                        const daysUntilOrder = Math.ceil((nextSuggestedOrderDate - today) / (1000 * 3600 * 24));
+
+                        if(daysUntilOrder <= 5) {
+                            hasReorder = true;
+                            const dateStr = formatDateShort(nextSuggestedOrderDate);
+                            reorderList.innerHTML += `<div>• <b>${p.name}</b>: 到貨差 ${avgLeadDays} 天，建議於 <b>${dateStr}</b> 提早訂貨</div>`;
+                        }
+                    }
+                }
+            });
+
+            if(hasReorder) reorderBanner.classList.remove('hidden');
+            else reorderBanner.classList.add('hidden');
+        }
+
+        /* ================= 4. 自動計算單位價格（商品價錢 ÷ 商品計量單位） ================= */
+        function autoCalcUnitPrice() {
+            const price = parseFloat(document.getElementById('newPurchasePrice').value);
+            const measureUnit = parseFloat(document.getElementById('newPurchaseMeasureUnit').value);
+            const hiddenUnitPrice = document.getElementById('newUnitPrice');
+            const displayUnitPrice = document.getElementById('newUnitPriceDisplay');
+
+            if (!isNaN(price) && price > 0 && !isNaN(measureUnit) && measureUnit > 0) {
+                const rawUnit = price / measureUnit;
+                const formatted = rawUnit >= 0.1 ? Number(rawUnit.toFixed(2)) : Number(rawUnit.toFixed(3));
+                hiddenUnitPrice.value = formatted;
+                displayUnitPrice.value = `$${formatted}`;
+            } else if (!isNaN(price) && price > 0 && (isNaN(measureUnit) || measureUnit <= 0)) {
+                hiddenUnitPrice.value = '';
+                displayUnitPrice.value = '';
+            } else {
+                hiddenUnitPrice.value = '';
+                displayUnitPrice.value = '';
+            }
+        }
+
+        function addPurchaseRecord() {
+            const price = parseFloat(document.getElementById('newPurchasePrice').value);
+            const measureUnitRaw = parseFloat(document.getElementById('newPurchaseMeasureUnit').value);
+            const measureUnit = (!isNaN(measureUnitRaw) && measureUnitRaw > 0) ? measureUnitRaw : null;
+            let unitPrice = parseFloat(document.getElementById('newUnitPrice').value) || null;
+            if (!unitPrice && price > 0 && measureUnit) {
+                const rawUnit = price / measureUnit;
+                unitPrice = rawUnit >= 0.1 ? Number(rawUnit.toFixed(2)) : Number(rawUnit.toFixed(3));
+            }
+
+            const orderDate = document.getElementById('newOrderDate').value;
+            const arrivalDate = document.getElementById('newArrivalDate').value;
+            const note = document.getElementById('newPurchaseNote').value.trim();
+
+            if(!price || (!orderDate && !arrivalDate)) {
+                showToast('請填寫商品價錢與訂/到貨日期', 'warning'); return;
+            }
+
+            let leadTimeDays = null;
+            if(orderDate && arrivalDate) {
+                const diff = (new Date(arrivalDate) - new Date(orderDate)) / (1000 * 3600 * 24);
+                leadTimeDays = Math.max(0, Math.round(diff));
+            }
+
+            currentEditingHistory.push({
+                id: Date.now().toString(),
+                price,
+                measureUnit,
+                unitPrice,
+                orderDate,
+                arrivalDate,
+                leadTimeDays,
+                note,
+                date: arrivalDate || orderDate
+            });
+
+            document.getElementById('newPurchasePrice').value = '';
+            document.getElementById('newPurchaseMeasureUnit').value = '';
+            document.getElementById('newUnitPrice').value = '';
+            document.getElementById('newUnitPriceDisplay').value = '';
+            document.getElementById('newPurchaseNote').value = '';
+            renderPurchaseHistory();
+        }
+
+        function deletePurchaseRecord(id) {
+            Swal.fire({
+                title: '確定刪除此買入紀錄？', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444'
+            }).then((res) => {
+                if(res.isConfirmed) {
+                    currentEditingHistory = currentEditingHistory.filter(item => item.id !== id);
+                    renderPurchaseHistory();
+                    showToast('紀錄已移除');
+                }
+            });
+        }
+
+        function renderPurchaseHistory() {
+            const box = document.getElementById('purchaseHistoryList');
+            if(!box) return;
+            box.innerHTML = '';
+
+            if(currentEditingHistory.length === 0) {
+                box.innerHTML = `<p class="text-[10px] text-gray-400 py-0.5 text-center">尚無買入歷史紀錄</p>`; return;
+            }
+
+            currentEditingHistory.forEach(h => {
+                const displayDate = formatDateShort(h.arrivalDate || h.orderDate || h.date);
+                const leadStr = h.leadTimeDays !== null ? `${h.leadTimeDays}天` : '-';
+                const unitStr = h.unitPrice ? (h.measureUnit ? `$${h.unitPrice}/單位 (共${h.measureUnit}單位)` : `$${h.unitPrice}/單位`) : '';
+                const noteStr = h.note ? `| ${h.note}` : '';
+
+                box.innerHTML += `
+                    <div class="flex justify-between items-center bg-white px-2 py-1 rounded border border-gray-100 text-[10px] leading-tight shrink-0 gap-1">
+                        <span class="font-bold text-gray-500 shrink-0">${displayDate}</span>
+                        <span class="font-extrabold text-emerald-600 shrink-0">$${h.price}</span>
+                        <span class="text-gray-500 truncate flex-1">${unitStr} (耗時${leadStr}) ${noteStr}</span>
+                        <button type="button" onclick="deletePurchaseRecord('${h.id}')" class="text-red-400 hover:text-red-600 shrink-0 px-1"><i class="fas fa-times"></i></button>
+                    </div>
+                `;
+            });
+        }
+
+        /* ================= 5. 圖片顯示、極簡位址、與網頁圖片複製貼上 ================= */
+        function compressAndSetImageBlob(blobOrFile) {
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const maxDim = 260;
+                    let w = img.width, h = img.height;
+                    if(w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                    else { w = Math.round((w * maxDim) / h); h = maxDim; }
+                    canvas.width = w; canvas.height = h;
+                    ctx.drawImage(img, 0, 0, w, h);
+                    const compressed = canvas.toDataURL('image/jpeg', 0.78);
+                    setProductModalImage(compressed);
+                    showToast('✅ 已成功貼上網頁圖片');
+                };
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(blobOrFile);
+        }
+
+        function handleImgInputPaste(e) {
+            const clipboardData = e.clipboardData || window.clipboardData;
+            if (!clipboardData) return;
+
+            if (clipboardData.items) {
+                for (let i = 0; i < clipboardData.items.length; i++) {
+                    const item = clipboardData.items[i];
+                    if (item.type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        const blob = item.getAsFile();
+                        if (blob) compressAndSetImageBlob(blob);
+                        return;
+                    }
+                }
+            }
+
+            const pastedText = (clipboardData.getData('text') || '').trim();
+            if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://') || pastedText.startsWith('data:image/'))) {
+                e.preventDefault();
+                setProductModalImage(pastedText);
+                showToast('✅ 已貼上網頁圖片連結');
+            }
+        }
+
+        function handleModalGlobalPaste(e) {
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            const activeId = document.activeElement ? document.activeElement.id : '';
+            if (activeId === 'itemImgDisplay') return; // 已由 handleImgInputPaste 處理
+
+            const clipboardData = e.clipboardData || window.clipboardData;
+            if (!clipboardData) return;
+
+            // 若剪貼簿包含複製的網頁圖片（Blob），直接載入為商品圖片
+            if (clipboardData.items) {
+                for (let i = 0; i < clipboardData.items.length; i++) {
+                    const item = clipboardData.items[i];
+                    if (item.type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        const blob = item.getAsFile();
+                        if (blob) compressAndSetImageBlob(blob);
+                        return;
+                    }
+                }
+            }
+
+            // 若非正在輸入其他文字欄位，且貼上內容為圖片網址
+            if (activeTag !== 'input' && activeTag !== 'textarea') {
+                const pastedText = (clipboardData.getData('text') || '').trim();
+                if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://') || pastedText.startsWith('data:image/'))) {
+                    e.preventDefault();
+                    setProductModalImage(pastedText);
+                    showToast('✅ 已貼上網頁圖片連結');
+                }
+            }
+        }
+
+        async function pasteImageFromClipboard() {
+            try {
+                if (navigator.clipboard && navigator.clipboard.read) {
+                    const clipboardItems = await navigator.clipboard.read();
+                    for (const item of clipboardItems) {
+                        const imageType = item.types.find(t => t.startsWith('image/'));
+                        if (imageType) {
+                            const blob = await item.getType(imageType);
+                            compressAndSetImageBlob(blob);
+                            return;
+                        }
+                        if (item.types.includes('text/plain')) {
+                            const textBlob = await item.getType('text/plain');
+                            const text = (await textBlob.text()).trim();
+                            if (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/')) {
+                                setProductModalImage(text);
+                                showToast('✅ 已貼上網頁圖片連結');
+                                return;
+                            }
+                        }
+                    }
+                    showToast('剪貼簿內未偵測到圖片，請先在網頁複製圖片或網址', 'warning');
+                    return;
+                }
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const text = (await navigator.clipboard.readText()).trim();
+                    if (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/')) {
+                        setProductModalImage(text);
+                        showToast('✅ 已貼上網頁圖片連結');
+                        return;
+                    }
+                }
+            } catch (err) {
+                const displayInput = document.getElementById('itemImgDisplay');
+                if (displayInput) {
+                    displayInput.readOnly = false;
+                    displayInput.focus();
+                    showToast('請長按上方輸入框並點擊「貼上 (Paste)」', 'info');
+                }
+            }
+        }
+
+        function setProductModalImage(imgVal) {
+            const hiddenInput = document.getElementById('itemImg');
+            const displayInput = document.getElementById('itemImgDisplay');
+            const previewBox = document.getElementById('imgPreviewBox');
+            const previewImg = document.getElementById('imgPreview');
+            const clearBtn = document.getElementById('clearImgBtn');
+
+            hiddenInput.value = imgVal || '';
+
+            if (imgVal) {
+                previewImg.src = imgVal;
+                previewBox.classList.remove('hidden');
+                clearBtn.classList.remove('hidden');
+                if (imgVal.startsWith('data:image')) {
+                    displayInput.value = '📷 已載入圖片 (可貼上覆蓋)';
+                    displayInput.readOnly = false;
+                } else {
+                    displayInput.value = imgVal;
+                    displayInput.readOnly = false;
+                }
+            } else {
+                previewImg.src = '';
+                previewBox.classList.add('hidden');
+                clearBtn.classList.add('hidden');
+                displayInput.value = '';
+                displayInput.readOnly = false;
+            }
+        }
+
+        function handleImgUrlInput(val) {
+            const trimmed = val.trim();
+            if (trimmed.startsWith('📷 已載入圖片')) return;
+            document.getElementById('itemImg').value = trimmed;
+            const previewBox = document.getElementById('imgPreviewBox');
+            const previewImg = document.getElementById('imgPreview');
+            const clearBtn = document.getElementById('clearImgBtn');
+            if (trimmed) {
+                previewImg.src = trimmed;
+                previewBox.classList.remove('hidden');
+                clearBtn.classList.remove('hidden');
+            } else {
+                previewBox.classList.add('hidden');
+                clearBtn.classList.add('hidden');
+            }
+        }
+
+        function clearProductImage() {
+            setProductModalImage('');
+        }
+
+        function setModalBarcodeBadge(barcode) {
+            const input = document.getElementById('itemBarcode');
+            const badge = document.getElementById('barcodeBadge');
+            input.value = barcode || '';
+            if (barcode) {
+                badge.innerText = `條碼: ${barcode}`;
+                badge.classList.remove('hidden');
+            } else {
+                badge.innerText = '';
+                badge.classList.add('hidden');
+            }
+        }
+
+        function openProductModal(index = -1) {
+            document.getElementById('itemIndex').value = index;
+            const todayStr = new Date().toISOString().split('T')[0];
+            document.getElementById('newOrderDate').value = todayStr;
+            document.getElementById('newArrivalDate').value = todayStr;
+            document.getElementById('newPurchasePrice').value = '';
+            document.getElementById('newPurchaseMeasureUnit').value = '';
+            document.getElementById('newUnitPrice').value = '';
+            document.getElementById('newUnitPriceDisplay').value = '';
+            document.getElementById('newPurchaseNote').value = '';
+
+            if(index > -1) {
+                const item = db.products[index];
+                document.getElementById('modalTitle').innerText = '編輯用品細節';
+                document.getElementById('itemName').value = item.name;
+                setProductModalImage(item.img || '');
+                setModalBarcodeBadge(item.barcode || '');
+                document.getElementById('itemCat').value = item.category || db.categories[0];
+                document.getElementById('itemLoc').value = item.location || db.locations[0];
+                document.getElementById('itemQty').value = item.qty;
+                document.getElementById('itemMinQty').value = item.minQty !== undefined ? item.minQty : 1;
+                document.getElementById('itemFollow').checked = !!item.isFollowed;
+                document.getElementById('itemWatch').checked = !!item.isMonitored;
+
+                currentEditingHistory = item.purchaseHistory ? [...item.purchaseHistory] : [];
+                document.getElementById('deleteBtn').classList.remove('hidden');
+            } else {
+                document.getElementById('modalTitle').innerText = '新增用品';
+                document.getElementById('itemName').value = '';
+                setProductModalImage('');
+                setModalBarcodeBadge('');
+                document.getElementById('itemCat').value = db.categories[0];
+                document.getElementById('itemLoc').value = db.locations[0];
+                document.getElementById('itemQty').value = 1;
+                document.getElementById('itemMinQty').value = 1;
+                document.getElementById('itemFollow').checked = false;
+                document.getElementById('itemWatch').checked = false;
+                currentEditingHistory = [];
+                document.getElementById('deleteBtn').classList.add('hidden');
+            }
+            
+            renderPurchaseHistory();
+            const modal = document.getElementById('productModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeProductModal(force = false) {
+            if (force === true || event.target.id === 'productModal') {
+                const modal = document.getElementById('productModal');
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        function adjustModalQty(delta) {
+            const input = document.getElementById('itemQty');
+            let v = parseInt(input.value) || 0;
+            if(v + delta >= 0) input.value = v + delta;
+        }
+
+        function saveProduct() {
+            const name = document.getElementById('itemName').value.trim();
+            if(!name) { showToast('請填寫用品名稱', 'error'); return; }
+
+            const idx = parseInt(document.getElementById('itemIndex').value);
+            const item = {
+                name,
+                barcode: document.getElementById('itemBarcode').value.trim(),
+                img: document.getElementById('itemImg').value.trim(),
+                category: document.getElementById('itemCat').value,
+                location: document.getElementById('itemLoc').value,
+                qty: parseInt(document.getElementById('itemQty').value) || 0,
+                minQty: parseInt(document.getElementById('itemMinQty').value) || 0,
+                purchaseHistory: currentEditingHistory,
+                isFollowed: document.getElementById('itemFollow').checked,
+                isMonitored: document.getElementById('itemWatch').checked,
+                lastUpdated: new Date().toISOString()
+            };
+
+            if(!db.products) db.products = [];
+            if (idx > -1) {
+                db.products[idx] = { ...db.products[idx], ...item };
+                addLog('更新用品', `修改用品: ${name}`);
+            } else {
+                item.id = Date.now().toString();
+                db.products.push(item);
+                addLog('新增用品', `新增用品: ${name}`);
+            }
+
+            saveToCloud();
+            renderProducts();
+            renderWatchlist();
+            checkLowStockAndReorderAlerts();
+            closeProductModal(true);
+            showToast('✅ 已儲存並同步至雲端');
+        }
+
+        function deleteProduct() {
+            Swal.fire({
+                title: '確定刪除此用品？', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444'
+            }).then(res => {
+                if(res.isConfirmed) {
+                    const idx = document.getElementById('itemIndex').value;
+                    const name = db.products[idx].name;
+                    db.products.splice(idx, 1);
+                    saveToCloud();
+                    renderProducts();
+                    renderWatchlist();
+                    checkLowStockAndReorderAlerts();
+                    closeProductModal(true);
+                    addLog('刪除用品', `刪除用品: ${name}`);
+                    showToast('已刪除');
+                }
+            });
+        }
+
+        function quickAdjustQty(index, delta) {
+            if(db.products[index].qty + delta >= 0) {
+                db.products[index].qty += delta;
+                db.products[index].lastUpdated = new Date().toISOString();
+                addLog('庫存調整', `${db.products[index].name} 數量 ${delta > 0 ? '+1' : '-1'} (現存: ${db.products[index].qty})`);
+                saveToCloud();
+                renderProducts();
+                renderWatchlist();
+                checkLowStockAndReorderAlerts();
+            }
+        }
+
+        /* ================= 2. 主頁卡片渲染：固定大小 + 全圖顯示 + 商品名與存放位置置中 ================= */
+        function renderProducts(filter = '') {
+            const list = document.getElementById('productList');
+            if(!list) return;
+            list.innerHTML = '';
+            
+            if(!db.products || db.products.length === 0) {
+                list.innerHTML = `<div class="col-span-full text-center py-10 text-gray-400"><i class="fas fa-box-open text-3xl mb-2"></i><p class="text-xs">尚無用品，點擊右上角「新增」或「匯入單據」</p></div>`;
+                return;
+            }
+
+            const availableProducts = db.products.filter(p => p.qty > 0);
+
+            if(availableProducts.length === 0) {
+                list.innerHTML = `<div class="col-span-full text-center py-10 text-gray-400"><i class="fas fa-check-circle text-3xl mb-2 text-emerald-500"></i><p class="text-xs">現有庫存用品皆充足，缺貨用品已移至「監察」頁面</p></div>`;
+                return;
+            }
+
+            availableProducts.forEach((item) => {
+                const index = db.products.indexOf(item);
+                if(filter && !item.name.toLowerCase().includes(filter.toLowerCase())) return;
+                if(activeCategory !== '全部' && item.category !== activeCategory) return;
+                if(activeLocation !== '全部' && item.location !== activeLocation) return;
+
+                // 固定高度 h-20 的白色圖片框 + object-contain 確保所有尺寸下皆完整顯示全圖
+                const imgTag = item.img ? 
+                    `<div class="w-full h-20 bg-white border-b border-gray-100 flex items-center justify-center p-1.5 shrink-0">
+                        <img src="${item.img}" class="max-w-full max-h-full w-auto h-auto object-contain" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-box text-emerald-500 text-xl\\'></i>'">
+                    </div>` :
+                    `<div class="w-full h-20 bg-emerald-50/80 border-b border-emerald-100/50 text-emerald-500 flex items-center justify-center text-xl shrink-0">
+                        <i class="fas fa-box"></i>
+                    </div>`;
+
+                list.innerHTML += `
+                    <div class="bg-white rounded-xl shadow-xs border border-gray-100 product-card-fixed overflow-hidden relative cursor-pointer" onclick="openProductModal(${index})">
+                        ${item.isMonitored ? '<i class="fas fa-star text-amber-400 absolute top-1 right-1 text-[11px] z-10 bg-white/90 rounded-full p-0.5 shadow-2xs"></i>' : ''}
+                        ${imgTag}
+                        <div class="px-1.5 py-1 flex-1 flex flex-col justify-center items-center text-center min-h-0">
+                            <h3 class="w-full font-bold text-gray-800 text-xs truncate leading-tight text-center" title="${item.name}">${item.name}</h3>
+                            <p class="w-full text-[9px] text-gray-400 truncate mt-0.5 text-center">${item.location || '未設定'}</p>
+                        </div>
+                        <div class="flex justify-between items-center p-1.5 bg-gray-50 border-t border-gray-100 shrink-0">
+                            <button onclick="event.stopPropagation(); quickAdjustQty(${index}, -1)" class="w-6 h-6 rounded-lg bg-white border text-gray-600 active:scale-90 flex items-center justify-center"><i class="fas fa-minus text-[8px]"></i></button>
+                            <span class="text-xs font-black text-gray-800">${item.qty}</span>
+                            <button onclick="event.stopPropagation(); quickAdjustQty(${index}, 1)" class="w-6 h-6 rounded-lg bg-emerald-500 text-white active:scale-90 flex items-center justify-center shadow-xs"><i class="fas fa-plus text-[8px]"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function renderWatchlist() {
+            const zeroBox = document.getElementById('zeroStockContainer');
+            const stickyBox = document.getElementById('followedMerchantStickyBox');
+            const c = document.getElementById('watchlistContainer');
+            if(!zeroBox || !stickyBox || !c || !db.products) return;
+
+            zeroBox.innerHTML = '';
+            stickyBox.innerHTML = '';
+            c.innerHTML = '';
+
+            const zeroItems = db.products.filter(p => p.qty === 0);
+            if(zeroItems.length === 0) {
+                zeroBox.innerHTML = `<p class="text-[11px] text-gray-400 bg-gray-50 p-2 rounded-xl text-center">目前暫無缺貨用品。</p>`;
+            } else {
+                zeroItems.forEach(item => {
+                    const globalIndex = db.products.indexOf(item);
+                    zeroBox.innerHTML += `
+                        <div class="bg-red-50 p-2.5 rounded-xl border border-red-200 flex justify-between items-center gap-2" onclick="openProductModal(${globalIndex})">
+                            <i class="fas fa-exclamation-circle text-red-500 shrink-0"></i>
+                            <div class="flex-1 text-center min-w-0">
+                                <p class="font-bold text-xs text-red-900 truncate">${item.name}</p>
+                                <p class="text-[10px] text-red-600 truncate">庫存: 0 (需要重新購入) | 位置: ${item.location||'未設定'}</p>
+                            </div>
+                            <button onclick="event.stopPropagation(); quickAdjustQty(${globalIndex}, 1)" class="bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold shadow-xs active:scale-95 shrink-0">+ 補貨1個</button>
+                        </div>
+                    `;
+                });
+            }
+
+            const followedList = db.products.filter(p => p.isFollowed);
+            if(followedList.length === 0) {
+                stickyBox.innerHTML = `<p class="text-xs text-gray-400 bg-gray-50 p-2.5 rounded-xl text-center">未有關注商品。可在用品編輯頁勾選「關注」。</p>`;
+            } else {
+                followedList.forEach(item => {
+                    const enc = encodeURIComponent(item.name);
+                    stickyBox.innerHTML += `
+                        <div class="bg-white p-2.5 rounded-xl shadow-xs border border-emerald-100">
+                            <h4 class="font-bold text-xs text-gray-800 mb-1.5 flex items-center justify-center text-center"><i class="fas fa-eye text-emerald-500 mr-1.5"></i>${item.name}</h4>
+                            <div class="grid grid-cols-6 gap-1 text-center text-[10px]">
+                                <a href="https://www.parknshop.com/zh-hk/search?text=${enc}" target="_blank" class="bg-blue-50 p-1 rounded border border-blue-100 block">
+                                    <span class="font-bold text-blue-700 block">百佳</span>
+                                    <span class="text-gray-500 text-[8px]">查價 ↗</span>
+                                </a>
+                                <a href="https://www.wellcome.com.hk/zh-hant/search?q=${enc}" target="_blank" class="bg-red-50 p-1 rounded border border-red-100 block">
+                                    <span class="font-bold text-red-700 block">惠康</span>
+                                    <span class="text-gray-500 text-[8px]">查價 ↗</span>
+                                </a>
+                                <a href="https://www.hktvmall.com/hktv/zh/main/search?keyword=${enc}" target="_blank" class="bg-amber-50 p-1 rounded border border-amber-100 block">
+                                    <span class="font-bold text-amber-700 block">HKTV</span>
+                                    <span class="text-gray-500 text-[8px]">查價 ↗</span>
+                                </a>
+                                <a href="https://7-eleven.com.hk/zh/search?q=${enc}" target="_blank" class="bg-emerald-50 p-1 rounded border border-emerald-100 block">
+                                    <span class="font-bold text-emerald-700 block">7-11</span>
+                                    <span class="text-gray-500 text-[8px]">N/A</span>
+                                </a>
+                                <a href="https://www.circlek.hk/search?q=${enc}" target="_blank" class="bg-orange-50 p-1 rounded border border-orange-100 block">
+                                    <span class="font-bold text-orange-700 block">OK</span>
+                                    <span class="text-gray-500 text-[8px]">N/A</span>
+                                </a>
+                                <a href="https://hk.iherb.com/search?kw=${enc}" target="_blank" class="bg-green-50 p-1 rounded border border-green-200 block">
+                                    <span class="font-bold text-green-800 block">iHerb</span>
+                                    <span class="text-gray-500 text-[8px]">查價 ↗</span>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            const monitoredList = db.products.filter(p => p.isMonitored);
+            if(monitoredList.length === 0) {
+                c.innerHTML = `<p class="text-center text-gray-400 text-xs py-3">尚無監察商品</p>`; return;
+            }
+
+            monitoredList.forEach((item) => {
+                const globalIndex = db.products.indexOf(item);
+                c.innerHTML += `
+                    <div class="bg-white p-2.5 rounded-xl shadow-xs border border-amber-100 flex justify-between items-center gap-2" onclick="openProductModal(${globalIndex})">
+                        <i class="fas fa-star text-amber-400 shrink-0"></i>
+                        <div class="flex-1 text-center min-w-0">
+                            <p class="font-bold text-xs text-gray-800 truncate">${item.name}</p>
+                            <p class="text-[10px] text-gray-400 truncate">位置: ${item.location||'未設定'} | 現量: ${item.qty} | 低存量閥值: ${item.minQty||0}</p>
+                        </div>
+                        <button class="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0">詳情</button>
+                    </div>
+                `;
+            });
+        }
+
+        /* ================= Web App 內建「匯入送貨單精靈」 ================= */
+        function openImportWizard() {
+            syncGeminiKeyUI();
+            resetImportWizardStep();
+            clearImportFile();
+            document.getElementById('importRawText').value = '';
+            const modal = document.getElementById('importWizardModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeImportWizard(force = false) {
+            if (force === true || event.target.id === 'importWizardModal') {
+                const modal = document.getElementById('importWizardModal');
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        function resetImportWizardStep() {
+            document.getElementById('importStepInput').classList.remove('hidden');
+            document.getElementById('importStepConfirm').classList.add('hidden');
+        }
+
+        function clearImportFile() {
+            importUploadedImageBase64 = null;
+            importUploadedMimeType = null;
+            const fileInput = document.getElementById('importFileInput');
+            if (fileInput) fileInput.value = '';
+            document.getElementById('importFileBadge').classList.add('hidden');
+        }
+
+        function cleanExtractedPdfText(rawPagesText) {
+            const lines = rawPagesText.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+            const seen = new Set();
+            const cleaned = [];
+            const boilerplatePattern = /^(條款及細則|Terms\s*&?\s*Conditions|退貨及退款政策|Return\s*&?\s*Refund|私隱政策|Privacy\s*Policy|版權所有|Copyright|HKTVmall保留最終決定權|如有任何爭議|顧客服務熱線|Customer\s*Service|Page\s*\d+\s*of\s*\d+|第\s*\d+\s*頁)/i;
+
+            for (const line of lines) {
+                if (boilerplatePattern.test(line)) continue;
+                // 過濾超長法律條文段落（通常超過 180 字且不含數量/價錢特徵）
+                if (line.length > 180 && !/(?:\$|HK\$|x\s*\d+|\d+\s*(?:件|盒|包|支|罐|瓶|排|袋|ml|g|kg))/i.test(line)) continue;
+                const key = line.toLowerCase();
+                if (seen.has(key) && line.length > 25) continue;
+                seen.add(key);
+                cleaned.push(line);
+            }
+            // 限制最大長度避免單據過長導致超時，保留前 12000 字（商品明細永遠在單據前段）
+            return cleaned.join('\n').slice(0, 12000);
+        }
+
+        async function handleImportFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const badge = document.getElementById('importFileBadge');
+            const nameEl = document.getElementById('importFileName');
+            badge.classList.remove('hidden');
+            nameEl.innerText = `讀取中: ${file.name}...`;
+
+            if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                try {
+                    if (!window.pdfjsLib) {
+                        showToast('PDF 元件載入中，請稍後再試', 'warning');
+                        return;
+                    }
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    let fullText = '';
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const content = await page.getTextContent();
+                        // 按 Y 座標分行還原表格結構，避免整頁黏成一行
+                        const rows = [];
+                        content.items.forEach(item => {
+                            const str = (item.str || '').trim();
+                            if (!str) return;
+                            const y = item.transform ? Math.round(item.transform[5]) : 0;
+                            const x = item.transform ? item.transform[4] : 0;
+                            let row = rows.find(r => Math.abs(r.y - y) <= 4);
+                            if (!row) {
+                                row = { y, cells: [] };
+                                rows.push(row);
+                            }
+                            row.cells.push({ x, str });
+                        });
+                        rows.sort((a, b) => b.y - a.y);
+                        const pageLines = rows.map(r => {
+                            r.cells.sort((a, b) => a.x - b.x);
+                            return r.cells.map(c => c.str).join(' ');
+                        });
+                        fullText += pageLines.join('\n') + '\n';
+                    }
+
+                    const compactText = cleanExtractedPdfText(fullText);
+
+                    if (compactText.trim().length > 15) {
+                        const textArea = document.getElementById('importRawText');
+                        textArea.value = (textArea.value ? textArea.value + '\n' : '') + compactText.trim();
+                        nameEl.innerText = `📄 ${file.name} (已提取並精簡 ${pdf.numPages} 頁文字)`;
+                        showToast('已成功從 PDF 提取單據文字');
+                    } else {
+                        const page = await pdf.getPage(1);
+                        const viewport = page.getViewport({ scale: 1.5 });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        importUploadedImageBase64 = dataUrl.split(',')[1];
+                        importUploadedMimeType = 'image/jpeg';
+                        nameEl.innerText = `📄 ${file.name} (已轉為影像供 AI 識別)`;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast('PDF 解析失敗，請改用截圖或貼上文字', 'error');
+                    clearImportFile();
+                }
+            } else if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        const maxDim = 1400;
+                        let w = img.width, h = img.height;
+                        if (w > maxDim || h > maxDim) {
+                            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+                        }
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        importUploadedImageBase64 = dataUrl.split(',')[1];
+                        importUploadedMimeType = 'image/jpeg';
+                        nameEl.innerText = `🖼️ ${file.name} (準備好 AI 圖像識別)`;
+                    };
+                    img.src = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function normalizeProductString(str) {
+            return (str || '')
+                .toLowerCase()
+                .replace(/vitasoy/g, '維他奶')
+                .replace(/vita\b/g, '維他')
+                .replace(/tempo/g, '得寶')
+                .replace(/dettol/g, '滴露')
+                .replace(/coca[\s-]*cola|coke/g, '可口可樂')
+                .replace(/nissin/g, '出前一丁')
+                .replace(/lee kum kee/g, '李錦記')
+                .replace(/kleenex/g, '健力氏')
+                .replace(/virjoy/g, '唯潔雅')
+                .replace(/andrex/g, '皇冠')
+                .replace(/[()（）\[\]【】\-_.,+*x×]/g, ' ')
+                .replace(/\s+/g, '')
+                .trim();
+        }
+
+        function computeSimilarity(a, b) {
+            const s1 = normalizeProductString(a);
+            const s2 = normalizeProductString(b);
+            if (!s1 || !s2) return 0;
+            if (s1 === s2) return 1.0;
+            if (s1.includes(s2) || s2.includes(s1)) {
+                const ratio = Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length);
+                return Math.max(0.65, ratio);
+            }
+            const bigrams = (s) => {
+                const set = new Set();
+                for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+                return set;
+            };
+            const b1 = bigrams(s1);
+            const b2 = bigrams(s2);
+            if (b1.size === 0 || b2.size === 0) return 0;
+            let intersection = 0;
+            b1.forEach(bg => { if (b2.has(bg)) intersection++; });
+            return (2 * intersection) / (b1.size + b2.size);
+        }
+
+        function findBestProductMatch(parsedName) {
+            if (!db.products || db.products.length === 0) return -1;
+            let bestIdx = -1;
+            let bestScore = 0;
+            db.products.forEach((p, idx) => {
+                const score = computeSimilarity(parsedName, p.name);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestIdx = idx;
+                }
+            });
+            return bestScore >= 0.42 ? bestIdx : -1;
+        }
+
+        function guessCategoryFromName(name) {
+            const n = name.toLowerCase();
+            if (/奶|茶|水|汁|可樂|啤酒|咖啡|飲/.test(n)) return db.categories.find(c => c.includes('飲')) || db.categories[0];
+            if (/米|麵|油|鹽|糖|醬|蛋|肉|餅|零食|巧克力|朱古力|食/.test(n)) return db.categories.find(c => c.includes('食')) || db.categories[0];
+            if (/洗衣|消毒|漂白|洗潔|清潔|潔/.test(n)) return db.categories.find(c => c.includes('潔')) || db.categories[0];
+            if (/紙|面紙|捲紙|衛生|牙膏|沐浴|洗頭|日用/.test(n)) return db.categories.find(c => c.includes('日')) || db.categories[0];
+            return db.categories[0] || '其他';
+        }
+
+        function fallbackParseReceiptText(rawText) {
+            const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            const ignoreKeywords = /運費|總計|合計|小計|付款|信用卡|地址|電話|優惠碼|折扣|訂單編號|送貨日期|多謝|謝謝|收件人|派送|送貨詳情|條款|subtotal|total|delivery|shipping|discount|order|consignee/i;
+            const results = [];
+
+            lines.forEach(line => {
+                if (ignoreKeywords.test(line) || line.length < 2) return;
+                let qty = 1;
+                let price = null;
+                let cleanName = line;
+
+                const priceMatch = cleanName.match(/(?:HK\$|\$)\s*(\d+(?:\.\d{1,2})?)/i);
+                if (priceMatch) {
+                    price = parseFloat(priceMatch[1]);
+                    cleanName = cleanName.replace(priceMatch[0], ' ');
+                }
+
+                const qtyMatch = cleanName.match(/(?:[x×*]\s*(\d+)|數量[:：\s]*(\d+)|(\d+)\s*(?:件|盒|包|支|罐|瓶|排|袋))$/i) || cleanName.match(/\s[x×*]\s*(\d+)\b/i);
+                if (qtyMatch) {
+                    qty = parseInt(qtyMatch[1] || qtyMatch[2] || qtyMatch[3]) || 1;
+                    cleanName = cleanName.replace(qtyMatch[0], ' ');
+                }
+
+                cleanName = cleanName.replace(/^[\d.\-•*]+\s*/, '').replace(/\s+/g, ' ').trim();
+                if (cleanName.length >= 2) {
+                    results.push({
+                        name: cleanName,
+                        quantity: qty,
+                        price: price,
+                        category: guessCategoryFromName(cleanName)
+                    });
+                }
+            });
+            return results;
+        }
+
+        function sleepMs(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function postToGeminiEndpoint(endpointUrl, payload) {
+            const resp = await fetch(endpointUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (resp.ok) {
+                return { ok: true, data: await resp.json() };
+            }
+            const errData = await resp.json().catch(() => ({}));
+            const msg = errData.error?.message || `API 錯誤 (${resp.status})`;
+            return { ok: false, status: resp.status, message: msg };
+        }
+
+        async function callGeminiViaWorker(apiKey, parts) {
+            // 依序嘗試多個模型：當主模型出現 503 High Demand 或 429 時自動重試並切換至備援模型
+            const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest'];
+            const payload = {
+                contents: [{ parts }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    temperature: 0.1
+                }
+            };
+
+            let lastError = null;
+            let useVercelProxy = true;
+
+            for (let i = 0; i < models.length; i++) {
+                const model = models[i];
+
+                // 最多嘗試 2 次（處理 Google 暫時性 503 high demand）
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    if (attempt > 0) await sleepMs(1200);
+
+                    // 1. 優先嘗試同網域 Vercel Serverless Proxy（位於美國/新加坡節點，香港免 VPN）
+                    if (useVercelProxy) {
+                        try {
+                            const vRes = await postToGeminiEndpoint(`${VERCEL_PROXY_BASE}?model=${encodeURIComponent(model)}`, {
+                                apiKey,
+                                payload
+                            });
+                            if (vRes.ok) return vRes.data;
+                            // 若網站尚未建立 /api/gemini 檔案（404 / 405），停用 Vercel Proxy 並改走 Cloudflare Worker
+                            if (vRes.status === 404 || vRes.status === 405) {
+                                useVercelProxy = false;
+                            } else {
+                                lastError = new Error(vRes.message);
+                                if (vRes.status === 400 || vRes.status === 403) {
+                                    // 若是金鑰錯誤直接報錯；若是地區不支援則繼續往下測試
+                                    if (!/location is not supported/i.test(vRes.message)) throw lastError;
+                                }
+                                // 503 / 429 / 500 繼續重試或切換下一個模型
+                                continue;
+                            }
+                        } catch (e) {
+                            if (e === lastError) throw e;
+                            useVercelProxy = false;
+                        }
+                    }
+
+                    // 2. 備援：呼叫 Cloudflare Worker
+                    try {
+                        const wRes = await postToGeminiEndpoint(
+                            `${WORKER_BASE_URL}/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+                            payload
+                        );
+                        if (wRes.ok) return wRes.data;
+
+                        lastError = new Error(wRes.message);
+                        // 若遇到地區限制（Cloudflare 走到香港機房），無需再重試同機房模型，直接跳出給予明確指引
+                        if (/location is not supported/i.test(wRes.message)) {
+                            throw new Error('目前連線節點位於香港（Cloudflare 走了香港機房），請開啟 VPN 或於 Vercel 加入 api/gemini.js 即可永久免 VPN');
+                        }
+                        // 若金鑰無效
+                        if (wRes.status === 400 && /API key not valid/i.test(wRes.message)) {
+                            throw new Error('Gemini API Key 無效，請檢查是否複製完整');
+                        }
+                        // 若是 503 High Demand / 429 / 500 / 404，自動重試或切換下一個模型
+                    } catch (e) {
+                        lastError = e;
+                        if (/目前連線節點位於香港|API Key 無效/.test(e.message)) throw e;
+                    }
+                }
+            }
+
+            throw lastError || new Error('Gemini 伺服器暫時繁忙，請稍後再試');
+        }
+
+        async function parseDeliveryNote() {
+            const rawText = document.getElementById('importRawText').value.trim();
+            const apiKey = getEffectiveGeminiKey();
+
+            if (!rawText && !importUploadedImageBase64) {
+                showToast('請貼上訂單文字或上傳單據截圖 / PDF', 'warning');
+                return;
+            }
+
+            if (importUploadedImageBase64 && !apiKey) {
+                showToast('識別截圖需要設定 Gemini API Key，請先貼上金鑰', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('parseReceiptBtn');
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> 正在智能解析單據貨品...`;
+
+            try {
+                let extracted = [];
+
+                if (apiKey) {
+                    const existingNames = (db.products || []).map(p => p.name).join('、');
+                    const catNames = db.categories.join('、');
+                    const prompt = `你是一個專業的香港家庭用品庫存助理。請從提供的網購送貨單或收據中，抽取出所有購買的實體商品清單，過濾掉運費、優惠碼、折扣、總計、地址、收件人、條款及細則等非商品雜訊。
+請嚴格回傳 JSON 陣列格式，每個物件包含：
+- "name": 商品名稱（繁體中文優先，保留容量/包裝規格）
+- "quantity": 購買數量（整數，預設 1）
+- "price": 該項總金額（數字，如無則 null）
+- "category": 從以下分類中選擇最合適的一個：[${catNames}]
+參考現有家庭庫存名稱（若單據名稱與現有商品相同或為中英譯名，可保持清晰名稱以便系統比對）：[${existingNames}]`;
+
+                    const parts = [{ text: prompt }];
+                    if (rawText) parts.push({ text: `單據文字內容：\n${rawText}` });
+                    if (importUploadedImageBase64) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: importUploadedMimeType || 'image/jpeg',
+                                data: importUploadedImageBase64
+                            }
+                        });
+                    }
+
+                    const data = await callGeminiViaWorker(apiKey, parts);
+                    const textOut = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+                    const jsonParsed = JSON.parse(textOut);
+                    extracted = Array.isArray(jsonParsed) ? jsonParsed : (jsonParsed.items || []);
+                } else {
+                    extracted = fallbackParseReceiptText(rawText);
+                }
+
+                if (!extracted || extracted.length === 0) {
+                    showToast('未能識別出有效商品，請檢查單據內容', 'warning');
+                    return;
+                }
+
+                parsedImportItems = extracted.map((item, i) => {
+                    const name = (item.name || '').trim();
+                    const matchedIdx = findBestProductMatch(name);
+                    return {
+                        id: Date.now() + '_' + i,
+                        checked: true,
+                        name: name,
+                        quantity: Math.max(1, parseInt(item.quantity) || 1),
+                        price: item.price ? parseFloat(item.price) : null,
+                        category: db.categories.includes(item.category) ? item.category : guessCategoryFromName(name),
+                        matchedProductIndex: matchedIdx
+                    };
+                });
+
+                renderImportConfirmList();
+                document.getElementById('importStepInput').classList.add('hidden');
+                document.getElementById('importStepConfirm').classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                Swal.fire({
+                    icon: 'error',
+                    title: '解析失敗',
+                    text: err.message,
+                    confirmButtonColor: '#10b981'
+                });
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+            }
+        }
+
+        function renderImportConfirmList() {
+            const container = document.getElementById('importConfirmList');
+            container.innerHTML = '';
+
+            parsedImportItems.forEach((item, idx) => {
+                const isMatched = item.matchedProductIndex > -1 && db.products[item.matchedProductIndex];
+                const matchOptions = [
+                    `<option value="-1" ${!isMatched ? 'selected' : ''}>🆕 建立為全新用品</option>`,
+                    ...(db.products || []).map((p, pIdx) =>
+                        `<option value="${pIdx}" ${item.matchedProductIndex === pIdx ? 'selected' : ''}>🔗 合併現有: ${p.name} (現存 ${p.qty})</option>`
+                    )
+                ].join('');
+
+                const catOptions = db.categories.map(c =>
+                    `<option value="${c}" ${item.category === c ? 'selected' : ''}>${c}</option>`
+                ).join('');
+
+                container.innerHTML += `
+                    <div class="p-2.5 rounded-xl border ${isMatched ? 'bg-emerald-50/60 border-emerald-200' : 'bg-gray-50 border-gray-200'} space-y-1.5">
+                        <div class="flex items-center gap-1.5">
+                            <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="parsedImportItems[${idx}].checked = this.checked" class="w-4 h-4 text-emerald-600 rounded shrink-0">
+                            <input type="text" value="${item.name.replace(/"/g, '&quot;')}" onchange="parsedImportItems[${idx}].name = this.value" class="flex-1 p-1.5 rounded-lg bg-white border border-gray-200 font-bold text-xs text-gray-800 text-center min-w-0">
+                            <div class="flex items-center shrink-0">
+                                <span class="text-[10px] text-gray-500 mr-1">數量</span>
+                                <input type="number" min="1" value="${item.quantity}" onchange="parsedImportItems[${idx}].quantity = Math.max(1, parseInt(this.value)||1)" class="w-12 p-1 text-center rounded-lg bg-white border border-gray-200 font-bold text-xs">
+                            </div>
+                            <button type="button" onclick="parsedImportItems.splice(${idx}, 1); renderImportConfirmList();" class="text-red-400 hover:text-red-600 px-1 shrink-0"><i class="fas fa-trash-alt"></i></button>
+                        </div>
+
+                        <div class="grid grid-cols-12 gap-1.5 items-center pl-5">
+                            <div class="col-span-8">
+                                <select onchange="parsedImportItems[${idx}].matchedProductIndex = parseInt(this.value); renderImportConfirmList();" class="w-full p-1 rounded-lg bg-white border ${isMatched ? 'border-emerald-300 text-emerald-800 font-bold' : 'border-blue-200 text-blue-800 font-bold'} text-[11px]">
+                                    ${matchOptions}
+                                </select>
+                            </div>
+                            <div class="col-span-4">
+                                ${!isMatched ? `
+                                    <select onchange="parsedImportItems[${idx}].category = this.value" class="w-full p-1 rounded-lg bg-white border border-gray-200 text-[11px] center-select">
+                                        ${catOptions}
+                                    </select>
+                                ` : `
+                                    <span class="block text-center text-[10px] text-emerald-700 font-bold bg-emerald-100 py-1 rounded-lg">自動累加庫存</span>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function addEmptyImportRow() {
+            parsedImportItems.push({
+                id: Date.now().toString(),
+                checked: true,
+                name: '新購入用品',
+                quantity: 1,
+                price: null,
+                category: db.categories[0] || '其他',
+                matchedProductIndex: -1
+            });
+            renderImportConfirmList();
+        }
+
+        function confirmBatchStockIn() {
+            const selected = parsedImportItems.filter(i => i.checked && i.name.trim());
+            if (selected.length === 0) {
+                showToast('請至少勾選一項貨品', 'warning');
+                return;
+            }
+
+            if (!db.products) db.products = [];
+            const todayStr = new Date().toISOString().split('T')[0];
+            let updatedCount = 0;
+            let createdCount = 0;
+
+            selected.forEach(item => {
+                const targetIdx = item.matchedProductIndex;
+                const historyEntry = item.price ? {
+                    id: Date.now().toString() + Math.random().toString(36).slice(2, 5),
+                    price: item.price,
+                    measureUnit: item.quantity > 0 ? item.quantity : 1,
+                    unitPrice: item.quantity > 0 ? +(item.price / item.quantity).toFixed(2) : null,
+                    orderDate: todayStr,
+                    arrivalDate: todayStr,
+                    leadTimeDays: 0,
+                    note: '單據自動匯入',
+                    date: todayStr
+                } : null;
+
+                if (targetIdx > -1 && db.products[targetIdx]) {
+                    db.products[targetIdx].qty = (parseInt(db.products[targetIdx].qty) || 0) + item.quantity;
+                    db.products[targetIdx].lastUpdated = new Date().toISOString();
+                    if (historyEntry) {
+                        if (!db.products[targetIdx].purchaseHistory) db.products[targetIdx].purchaseHistory = [];
+                        db.products[targetIdx].purchaseHistory.push(historyEntry);
+                    }
+                    updatedCount++;
+                } else {
+                    db.products.push({
+                        id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+                        name: item.name.trim(),
+                        barcode: '',
+                        img: '',
+                        category: item.category || db.categories[0],
+                        location: db.locations[0] || '廚房櫃',
+                        qty: item.quantity,
+                        minQty: 1,
+                        purchaseHistory: historyEntry ? [historyEntry] : [],
+                        isFollowed: false,
+                        isMonitored: false,
+                        lastUpdated: new Date().toISOString()
+                    });
+                    createdCount++;
+                }
+            });
+
+            saveToCloud();
+            renderProducts();
+            renderWatchlist();
+            checkLowStockAndReorderAlerts();
+            addLog('單據批量入庫', `匯入 ${selected.length} 項貨品 (更新現有 ${updatedCount} 項，新增 ${createdCount} 項)`);
+            closeImportWizard(true);
+            showToast(`✅ 成功入庫！更新 ${updatedCount} 項，新增 ${createdCount} 項`);
+        }
+
+        /* ================= 格價雷達 & Log & 備份 ================= */
+        function runQuickCalc() {
+            const name = document.getElementById('calcName').value.trim();
+            if(!name) return showToast('請輸入商品名稱', 'warning');
+
+            const resDiv = document.getElementById('calcResult');
+            resDiv.classList.remove('hidden');
+
+            const enc = encodeURIComponent(name);
+            const stores = [
+                { name: '百佳 ParknShop', color: 'bg-blue-600', url: `https://www.parknshop.com/zh-hk/search?text=${enc}` },
+                { name: '惠康 Wellcome', color: 'bg-red-600', url: `https://www.wellcome.com.hk/zh-hant/search?q=${enc}` },
+                { name: 'HKTVmall', color: 'bg-amber-500', url: `https://www.hktvmall.com/hktv/zh/main/search?keyword=${enc}` },
+                { name: '7-Eleven', color: 'bg-emerald-600', url: `https://7-eleven.com.hk/zh/search?q=${enc}` },
+                { name: 'OK 便利店 Circle K', color: 'bg-orange-500', url: `https://www.circlek.hk/search?q=${enc}` },
+                { name: 'iHerb 香港門市', color: 'bg-green-700', url: `https://hk.iherb.com/search?kw=${enc}` }
+            ];
+
+            let html = `<p class="font-bold text-xs mb-2 text-gray-700"><i class="fas fa-external-link-alt mr-1 text-emerald-600"></i>全港 6 大商戶即時格價與直達連結</p><div class="space-y-1.5">`;
+            stores.forEach(s => {
+                html += `
+                    <div class="flex justify-between items-center p-2 bg-white rounded-xl border border-gray-100 text-xs">
+                        <span class="font-bold text-gray-800">${s.name}</span>
+                        <a href="${s.url}" target="_blank" class="${s.color} text-white px-2.5 py-1 rounded-lg font-bold text-[11px] shadow-xs active:scale-95">
+                            門市搜尋 ↗
+                        </a>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            resDiv.innerHTML = html;
+            addLog('格價雷達', `搜尋全港商戶格價: ${name}`);
+        }
+
+        function renderLogsView() {
+            const container = document.getElementById('activityLogContainer');
+            if(!container) return;
+            const logsRaw = localStorage.getItem(LOGS_KEY);
+            const logs = logsRaw ? JSON.parse(logsRaw) : [];
+
+            if(logs.length === 0) {
+                container.innerHTML = `<p class="text-center text-gray-400 text-xs py-3">尚無活動 Log 日誌</p>`; return;
+            }
+
+            container.innerHTML = logs.map(l => `
+                <div class="bg-gray-50 p-2 rounded-lg border border-gray-100 text-[11px]">
+                    <div class="flex justify-between font-bold text-gray-700">
+                        <span><i class="fas fa-user-circle mr-1 text-emerald-500"></i>${l.user} [${l.action}]</span>
+                        <span class="text-[9px] text-gray-400">${l.timeStr}</span>
+                    </div>
+                    <p class="text-gray-500 text-[10px] mt-0.5">${l.details}</p>
+                </div>
+            `).join('');
+        }
+
+        function clearLogs() {
+            Swal.fire({ title: '確定清空所有 Log 日誌？', icon: 'warning', showCancelButton: true }).then(r => {
+                if(r.isConfirmed) {
+                    localStorage.removeItem(LOGS_KEY); renderLogsView(); showToast('Log 已清空');
+                }
+            });
+        }
+
+        async function openOrExportBackupFolder() {
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker();
+                    const fileHandle = await dirHandle.getFileHandle(`home_inventory_backup_${new Date().toISOString().split('T')[0]}.json`, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(JSON.stringify(db.products, null, 2));
+                    await writable.close();
+                    showToast('已成功寫入至選定的資料夾');
+                    addLog('導出備份', '寫入至選定資料夾');
+                    return;
+                } catch(err) {}
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db.products, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `home_inventory_backup_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click(); dlAnchor.remove();
+            showToast('已下載庫存 JSON 備份');
+        }
+
+        async function openOrExportLogsFolder() {
+            const logsRaw = localStorage.getItem(LOGS_KEY) || '[]';
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker();
+                    const fileHandle = await dirHandle.getFileHandle(`activity_logs_${new Date().toISOString().split('T')[0]}.json`, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(logsRaw);
+                    await writable.close();
+                    showToast('已成功將 Log 寫入資料夾');
+                    return;
+                } catch(err) {}
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(logsRaw);
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `activity_logs_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click(); dlAnchor.remove();
+            showToast('已下載 Log 日誌');
+        }
+
+        function importBackupJSON(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const imported = JSON.parse(evt.target.result);
+                    if(Array.isArray(imported)) {
+                        db.products = imported;
+                        saveToCloud(); renderProducts(); renderWatchlist(); checkLowStockAndReorderAlerts();
+                        showToast('✅ 備份已成功匯入');
+                        addLog('匯入備份', '成功從 JSON 檔匯入數據');
+                    } else showToast('備份格式不正確', 'error');
+                } catch(err) { showToast('檔案讀取失敗', 'error'); }
+            };
+            reader.readAsText(file);
+        }
+
+        /* ================= 3. 群組成員渲染：僅保留正在上線用戶並依加入次序排列 ================= */
+        function renderAccountView() {
+            const loggedIn = document.getElementById('loggedInState');
+            const loggedOut = document.getElementById('loggedOutState');
+            
+            if (currentGroup && currentUser) {
+                if(loggedIn) loggedIn.classList.remove('hidden');
+                if(loggedOut) loggedOut.classList.add('hidden');
+
+                document.getElementById('displayFamilyName').innerText = currentGroup.name;
+                document.getElementById('headerGroupName').innerText = currentGroup.name;
+                document.getElementById('displayInviteCode').innerText = currentGroup.id;
+                document.getElementById('displayMyName').innerText = currentUser.name;
+                
+                const qrEl = document.getElementById('qrcode');
+                if(qrEl && !qrEl.dataset.renderedCode) {
+                    qrEl.innerHTML = '';
+                    new QRCode(qrEl, { text: currentGroup.id, width: 110, height: 110, colorDark : "#065f46" });
+                    qrEl.dataset.renderedCode = currentGroup.id;
+                }
+
+                const mList = document.getElementById('memberList');
+                const countBadge = document.getElementById('onlineMemberCount');
+                if(mList) {
+                    mList.innerHTML = '';
+                    const now = Date.now();
+                    // 只保留正在上線的用戶，並依照加入時間先後次序 (joinedAt) 排列
+                    const onlineMembers = Object.entries(db.members || {})
+                        .filter(([mId, m]) => mId === currentUser.id || (now - (m.lastActive || 0)) < ONLINE_TIMEOUT_MS)
+                        .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+
+                    if (countBadge) {
+                        countBadge.innerText = `${onlineMembers.length} 人在線`;
+                    }
+
+                    onlineMembers.forEach(([mId, m], index) => {
+                        const statusBadge = `<span class="text-emerald-600 font-bold text-[10px] bg-emerald-100 px-2 py-0.5 rounded-full">● 線上</span>`;
+                        const deleteBtn = (mId !== currentUser.id) ? 
+                            `<button onclick="deleteMember('${mId}', '${m.name}')" class="text-red-400 hover:text-red-600 p-1"><i class="fas fa-trash-alt"></i></button>` : '';
+
+                        mList.innerHTML += `
+                            <li class="flex justify-between p-2 bg-gray-50 rounded-xl text-xs items-center">
+                                <span class="font-bold text-gray-800">${index+1}. ${m.name} ${mId===currentUser.id?'(你)':''}</span>
+                                <div class="flex items-center gap-2">${statusBadge}${deleteBtn}</div>
+                            </li>
+                        `;
+                    });
+                }
+            } else {
+                if(loggedIn) loggedIn.classList.add('hidden');
+                if(loggedOut) loggedOut.classList.remove('hidden');
+                document.getElementById('headerGroupName').innerText = '未登入群組';
+            }
+        }
+
+        function deleteMember(mId, mName) {
+            Swal.fire({
+                title: `確定移除成員「${mName}」？`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444'
+            }).then((res) => {
+                if(res.isConfirmed && window.FB) {
+                    const mRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}/members/${mId}`);
+                    window.FB.remove(mRef).then(() => showToast(`已移除成員 ${mName}`));
+                }
+            });
+        }
+
+        function handlePhotoUpload(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            compressAndSetImageBlob(file);
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('section').forEach(sec => sec.classList.add('hidden'));
+            const targetSec = document.getElementById(`view-${tabId}`);
+            if(targetSec) targetSec.classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active', 'text-emerald-500'));
+            const activeNav = document.getElementById(`tab-${tabId}`);
+            if(activeNav) {
+                activeNav.classList.add('active', 'text-emerald-500');
+                activeNav.classList.remove('text-gray-400');
+            }
+            const mainEl = document.getElementById('mainContent');
+            if (mainEl) mainEl.scrollTop = 0;
+        }
+
+        function setCategoryFilter(cat) { activeCategory = cat; renderCategoryAndLocationFilters(); renderProducts(); }
+        function setLocationFilter(loc) { activeLocation = loc; renderCategoryAndLocationFilters(); renderProducts(); }
+
+        /* ================= 貨品 Barcode 掃描與自動查詢識別 ================= */
+        let scanTarget = '';
+        function startScanner(target) {
+            scanTarget = target;
+            isHandlingScan = false;
+            const modal = document.getElementById('scannerModal');
+            const manualBox = document.getElementById('manualBarcodeBox');
+            const titleEl = document.getElementById('scannerTitle');
+            const hintEl = document.getElementById('scannerHintText');
+
+            if (target === 'login') {
+                titleEl.innerText = '掃描家庭群組二維碼';
+                hintEl.innerText = '請將家人手機上的邀請 QR Code 置於方框內';
+                manualBox.classList.add('hidden');
+            } else {
+                titleEl.innerText = '掃描貨品 Barcode 條碼';
+                hintEl.innerText = '請將商品包裝上的條碼橫向對準掃描框';
+                manualBox.classList.remove('hidden');
+                document.getElementById('manualBarcodeInput').value = '';
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+
+            const qrboxConfig = target === 'login' ? { width: 220, height: 220 } : { width: 260, height: 130 };
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 12, qrbox: qrboxConfig },
+                (text) => {
+                    if (isHandlingScan) return;
+                    isHandlingScan = true;
+                    const code = text.trim();
+                    closeScanner();
+                    if (scanTarget === 'login') {
+                        joinByCode(code);
+                    } else {
+                        handleProductBarcodeDetected(code, scanTarget === 'fillModal');
+                    }
+                }
+            ).catch(err => {
+                console.warn('Camera start error:', err);
+                if (target === 'login') closeScanner();
+                else showToast('無法開啟相機，可使用下方手動輸入條碼', 'warning');
+            });
+        }
+
+        function submitManualBarcode() {
+            const code = document.getElementById('manualBarcodeInput').value.trim();
+            if (!code) return showToast('請輸入條碼數字', 'warning');
+            const isFillModal = (scanTarget === 'fillModal');
+            closeScanner();
+            handleProductBarcodeDetected(code, isFillModal);
+        }
+
+        function closeScanner() {
+            const modal = document.getElementById('scannerModal');
+            if(html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => modal.classList.add('hidden')).catch(() => modal.classList.add('hidden'));
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        async function handleProductBarcodeDetected(barcode, fillCurrentModalOnly = false) {
+            const cleanCode = barcode.replace(/\s+/g, '');
+            if (!cleanCode) return;
+
+            const existingIndex = (db.products || []).findIndex(p => p.barcode && p.barcode === cleanCode);
+            if (existingIndex > -1 && !fillCurrentModalOnly) {
+                const existingItem = db.products[existingIndex];
+                Swal.fire({
+                    title: `識別到現有用品`,
+                    html: `<p class="text-sm font-bold text-gray-800">${existingItem.name}</p><p class="text-xs text-gray-500 mt-1">條碼: ${cleanCode} | 目前庫存: ${existingItem.qty}</p>`,
+                    icon: 'success',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: '+1 庫存',
+                    denyButtonText: '編輯詳情',
+                    cancelButtonText: '取消',
+                    confirmButtonColor: '#10b981',
+                    denyButtonColor: '#3b82f6'
+                }).then((res) => {
+                    if (res.isConfirmed) {
+                        quickAdjustQty(existingIndex, 1);
+                        showToast(`✅ ${existingItem.name} 庫存 +1`);
+                    } else if (res.isDenied) {
+                        openProductModal(existingIndex);
+                    }
+                });
+                return;
+            }
+
+            if (!fillCurrentModalOnly) {
+                openProductModal(-1);
+            }
+            setModalBarcodeBadge(cleanCode);
+
+            if (existingIndex > -1 && fillCurrentModalOnly) {
+                document.getElementById('itemName').value = db.products[existingIndex].name;
+                if (db.products[existingIndex].img && !document.getElementById('itemImg').value) {
+                    setProductModalImage(db.products[existingIndex].img);
+                }
+                showToast(`已從家庭庫存帶入名稱：${db.products[existingIndex].name}`);
+                return;
+            }
+
+            showToast(`正在查詢條碼 ${cleanCode}...`, 'info');
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 4500);
+                const resp = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(cleanCode)}.json`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data && data.status === 1 && data.product) {
+                        const p = data.product;
+                        let rawName = p.product_name_zh_hant || p.product_name_zh || p.product_name || p.generic_name_zh || p.generic_name || '';
+                        rawName = rawName.trim();
+                        const brand = (p.brands || '').split(',')[0].trim();
+                        const qtyLabel = (p.quantity || '').trim();
+
+                        if (rawName) {
+                            let fullName = rawName;
+                            if (brand && !fullName.toLowerCase().includes(brand.toLowerCase())) {
+                                fullName = `${brand} ${fullName}`;
+                            }
+                            if (qtyLabel && !fullName.toLowerCase().includes(qtyLabel.toLowerCase())) {
+                                fullName = `${fullName} ${qtyLabel}`;
+                            }
+                            document.getElementById('itemName').value = fullName;
+                            const imgUrl = p.image_front_small_url || p.image_front_url || '';
+                            if (imgUrl && !document.getElementById('itemImg').value) {
+                                setProductModalImage(imgUrl);
+                            }
+                            showToast(`✅ 成功識別：${fullName}`);
+                            return;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('Barcode lookup timeout/error:', err);
+            }
+
+            const nameInput = document.getElementById('itemName');
+            nameInput.focus();
+            showToast(`條碼庫暫無此商品，已記錄條碼 ${cleanCode}，請輸入名稱（下次掃描自動識別）`, 'warning');
+        }
+
+        function editFamilyName() {
+            Swal.fire({ title: '修改家庭名稱', input: 'text', inputValue: currentGroup.name, showCancelButton: true }).then((r) => {
+                if (r.isConfirmed && r.value) { currentGroup.name = r.value; renderAccountView(); saveToCloud(); }
+            });
+        }
+        
+        function createGroupModal() {
+            closeFirstTimeLoginModal();
+            createGroup();
+        }
+
+        function createGroup() {
+            const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+            Swal.fire({ title: '建立全新家庭群組', input: 'text', inputValue: '我的家庭', showCancelButton: true, confirmButtonColor: '#10b981' }).then((res) => {
+                if (res.isConfirmed) {
+                    const groupName = res.value || "我的家庭";
+                    currentGroup = { id: code, name: groupName };
+                    currentUser = { id: 'u_' + Math.random().toString(36).substring(2, 9), name: "用戶 1", joinedAt: Date.now() };
+                    db.geminiApiKey = '';
+                    localStorage.removeItem(GEMINI_KEY_STORAGE);
+                    
+                    if(window.FB && isCloudReady) {
+                        const groupRef = window.FB.ref(window.FB.rtdb, `groups/${code}`);
+                        window.FB.set(groupRef, {
+                            name: currentGroup.name,
+                            geminiApiKey: '',
+                            products: [],
+                            categories: db.categories,
+                            locations: db.locations,
+                            members: {
+                                [currentUser.id]: { name: currentUser.name, lastActive: Date.now(), joinedAt: currentUser.joinedAt }
+                            }
+                        }).then(() => {
+                            closeFirstTimeLoginModal();
+                            syncGeminiKeyUI();
+                            saveSessionAndGo(true);
+                            showToast('已成功建立家庭群組！(您的身份：用戶 1)');
+                        });
+                    } else {
+                        closeFirstTimeLoginModal();
+                        syncGeminiKeyUI();
+                        saveSessionAndGo(true);
+                        showToast('已建立本地群組 (您的身份：用戶 1)');
+                    }
+                }
+            });
+        }
+
+        function handleModalJoin() {
+            const code = document.getElementById('modalInviteCodeInput').value.trim().toUpperCase();
+            const remember = document.getElementById('modalRememberDeviceCheck').checked;
+            joinByCode(code, remember);
+        }
+
+        function handleManualJoin() {
+            const code = document.getElementById('manualInviteCode').value.trim().toUpperCase();
+            const remember = document.getElementById('rememberDeviceCheck').checked;
+            joinByCode(code, remember);
+        }
+
+        function joinByCode(code, rememberDevice = true) {
+            if (!code || code.length !== 8) return showToast('請輸入 8 位邀請碼', 'error');
+            if (!window.FB || !isCloudReady) return showToast('雲端資料庫連線中...', 'error');
+
+            const groupRef = window.FB.ref(window.FB.rtdb, `groups/${code}`);
+            window.FB.get(groupRef).then((snapshot) => {
+                if (!snapshot.exists()) {
+                    showToast('找不到此群組邀請碼', 'error');
+                    return;
+                }
+                const groupData = snapshot.val() || {};
+                const now = Date.now();
+                const members = groupData.members || {};
+                const activeMembers = Object.values(members).filter(m => (now - (m.lastActive || 0)) < ONLINE_TIMEOUT_MS);
+                const autoUserName = `用戶 ${activeMembers.length + 1}`;
+                
+                currentGroup = { id: code, name: groupData.name || "家庭群組" };
+                currentUser = { 
+                    id: 'u_' + Math.random().toString(36).substring(2, 9), 
+                    name: autoUserName, 
+                    joinedAt: now 
+                };
+                db.geminiApiKey = groupData.geminiApiKey || '';
+                if (db.geminiApiKey) {
+                    localStorage.setItem(GEMINI_KEY_STORAGE, db.geminiApiKey);
+                } else {
+                    localStorage.removeItem(GEMINI_KEY_STORAGE);
+                }
+                
+                closeFirstTimeLoginModal();
+                syncGeminiKeyUI();
+                saveSessionAndGo(rememberDevice);
+                showToast(`已成功加入群組 (您的身份：${autoUserName})`);
+            }).catch(err => showToast('連線失敗: ' + err.message, 'error'));
+        }
+
+        function saveSessionAndGo(rememberDevice = true) {
+            if (rememberDevice) {
+                localStorage.setItem(SESSION_KEY, JSON.stringify({ group: currentGroup, user: currentUser }));
+            } else {
+                localStorage.removeItem(SESSION_KEY);
+            }
+            if(window.FB && isCloudReady) { registerAndListenCloud(currentGroup.id); startHeartbeat(); }
+            renderAccountView(); switchTab('products');
+        }
+
+        function logout() {
+            Swal.fire({
+                title: '確定登出當前家庭？', text: '登出後如需重新進入，請輸入原本家庭的 8 位邀請碼即可。',
+                icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444'
+            }).then((res) => {
+                if(res.isConfirmed) {
+                    if (currentGroup && currentUser && window.FB && isCloudReady) {
+                        const memberRef = window.FB.ref(window.FB.rtdb, `groups/${currentGroup.id}/members/${currentUser.id}`);
+                        window.FB.remove(memberRef).catch(() => {});
+                    }
+                    localStorage.removeItem(SESSION_KEY);
+                    localStorage.removeItem(GEMINI_KEY_STORAGE);
+                    location.reload();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
