@@ -118,6 +118,11 @@
     </style>
 </head>
 <body class="text-gray-800">
+    <!-- 版本確認標記 -->
+    <div id="v8-badge" class="fixed top-2 right-2 bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg z-50 pointer-events-none">
+        版本 V8
+    </div>
+
 
     <div id="bootloader">
         <i class="fas fa-home fa-3x mb-3 shadow-sm"></i>
@@ -2172,7 +2177,9 @@
         async function callGeminiViaWorker(apiKey, parts) {
             const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest'];
             let lastError = null;
-            let useVercelProxy = true; // 優先使用 Vercel
+
+            // 加上時間戳，強制破解瀏覽器 POST 快取
+            const cacheBuster = Date.now();
 
             for (let i = 0; i < models.length; i++) {
                 const model = models[i];
@@ -2180,54 +2187,36 @@
                 if (model.startsWith('gemini-2.5')) genConfig.thinkingConfig = { thinkingBudget: 0 };
                 const payload = { contents: [{ parts }], generationConfig: genConfig };
 
-                // 總共最多嘗試 3 次 (Vercel -> Worker -> Worker)
-                for (let attempt = 0; attempt < 3; attempt++) {
+                for (let attempt = 0; attempt < 2; attempt++) {
                     if (attempt > 0) await sleepMs(800);
 
-                    if (useVercelProxy) {
-                        try {
-                            const vRes = await postToGeminiEndpoint(`${VERCEL_PROXY_BASE}?model=${encodeURIComponent(model)}`, { apiKey, payload });
-                            if (vRes.ok) return vRes.data;
-                            
-                            // 400 (參數錯誤) 或 403 (權限錯誤) 代表金鑰問題，直接拋出不重試
-                            if (vRes.status === 400 || vRes.status === 403) {
-                                throw new Error(`Vercel 請求遭拒 (${vRes.status})，請檢查 API Key`);
-                            }
-                            
-                            // 其他錯誤 (404, 405, 500, 502 等) 強制切換備援
-                            useVercelProxy = false;
-                            lastError = new Error(`Vercel 代理異常 (${vRes.status}: ${vRes.message})，自動切換至備援節點...`);
-                            continue; // 進入下一次迴圈，將會執行 Worker 備援
-                        } catch (e) {
-                            if (e.message.includes('請檢查 API Key')) throw e;
-                            useVercelProxy = false;
-                            lastError = new Error(`連線 Vercel 失敗 (${e.message})，自動切換至備援節點...`);
-                            continue; // 進入下一次迴圈，執行 Worker 備援
+                    try {
+                        const vRes = await postToGeminiEndpoint(`${VERCEL_PROXY_BASE}?model=${encodeURIComponent(model)}&_cb=${cacheBuster}`, { apiKey, payload });
+                        
+                        if (vRes.ok) return vRes.data;
+                        
+                        // 擷取 Vercel 執行的地區 (如果 Vercel 還是 hkg1，就代表 Vercel 設定錯誤)
+                        const region = vRes.region || '未知地區';
+                        
+                        if (vRes.status === 400 && vRes.message.includes('User location is not supported')) {
+                             throw new Error(`Google 封鎖了請求！因為 Vercel 代理伺服器目前運行在「${region}」地區，請前往 Vercel Dashboard 將 Function Region 改為 Washington, D.C. (iad1)`);
                         }
-                    }
-
-                    // 執行 Cloudflare Worker 備援方案
-                    if (!useVercelProxy) {
-                        try {
-                            const wRes = await postToGeminiEndpoint(
-                                `${WORKER_BASE_URL}/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-                                payload
-                            );
-                            if (wRes.ok) return wRes.data;
-
-                            lastError = new Error(wRes.message);
-                            if (wRes.status === 400 && /API key not valid/i.test(wRes.message)) {
-                                throw new Error('Gemini API Key 無效，請確認金鑰正確無誤');
-                            }
-                        } catch (e) {
-                            lastError = e;
-                            if (e.message.includes('API Key 無效')) throw e;
+                        
+                        if (vRes.status === 400 || vRes.status === 403) {
+                            throw new Error(`API 金鑰錯誤或無權限 (狀態碼 ${vRes.status})`);
                         }
+                        
+                        lastError = new Error(`Vercel 代理發生錯誤 (狀態碼 ${vRes.status}, 地區 ${region})：${vRes.message}`);
+                        continue;
+                    } catch (e) {
+                        if (e.message.includes('Vercel 代理伺服器目前運行在') || e.message.includes('API 金鑰錯誤')) throw e;
+                        lastError = new Error(`連線到 Vercel 失敗 (${e.message})，請確認 /api/gemini 路由是否正確部署`);
+                        continue;
                     }
                 }
             }
 
-            throw lastError || new Error('所有伺服器節點均無回應，請稍後再試');
+            throw lastError || new Error('所有模型均嘗試失敗，請稍後再試');
         }
 
         async function parseDeliveryNote() {
